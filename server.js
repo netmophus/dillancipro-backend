@@ -49,11 +49,11 @@ const app = express();
 
 // ✅ Origines autorisées
 const allowedOrigins = [
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',  
-  'http://192.168.0.100:3000',
+  // 'http://localhost:3000',
+  // 'http://127.0.0.1:3000',  
+  // 'http://192.168.0.100:3000',
   // Production (si besoin):
-  // 'https://fahimtafrontend-cf7031f2fb20.herokuapp.com',
+   'https://dillanciprofrontend-94260dd67ad1.herokuapp.com/',
 ];
 
 
