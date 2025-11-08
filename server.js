@@ -49,32 +49,55 @@ const app = express();
 
 // ✅ Origines autorisées
 const allowedOrigins = [
-  // 'http://localhost:3000',
-  // 'http://127.0.0.1:3000',  
-  // 'http://192.168.0.100:3000',
-  // Production (si besoin):
-   'https://dillanciprofrontend-94260dd67ad1.herokuapp.com/',
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://192.168.0.100:3000",
+  "http://192.168.0.100:5173",
+  "https://dillanciprofrontend-94260dd67ad1.herokuapp.com",
 ];
 
+if (process.env.CLIENT_URL) {
+  allowedOrigins.push(process.env.CLIENT_URL);
+}
 
+if (process.env.ALLOWED_ORIGINS) {
+  allowedOrigins.push(
+    ...process.env.ALLOWED_ORIGINS.split(",")
+      .map((url) => url.trim())
+      .filter(Boolean)
+  );
+}
 
+const uniqueAllowedOrigins = [...new Set(allowedOrigins)];
 
+console.log("[CORS] Allowed origins:", uniqueAllowedOrigins);
 
 
 // ✅ Middleware CORS dynamique
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
-  optionsSuccessStatus: 200
-}));
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || uniqueAllowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.warn("[CORS] Origin non autorisée:", origin);
+        callback(null, false);
+      }
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Origin",
+      "X-Requested-With",
+      "Content-Type",
+      "Accept",
+      "Authorization",
+    ],
+    optionsSuccessStatus: 200,
+  })
+);
 
 
 app.use(express.json());
