@@ -53,10 +53,14 @@ exports.getUserProfile = async (req, res) => {
   }
 };
 
-// ✏️ Mettre à jour le profil utilisateur
+// ✏️ Mettre à jour le profil utilisateur (crée le profil s'il n'existe pas)
 exports.updateUserProfile = async (req, res) => {
   try {
     const updateData = { ...req.body };
+
+    // S'assurer que userId est toujours défini
+    const userId = req.user._id || req.user.id;
+    updateData.userId = userId;
 
     // Ajouter la photo si uploadée
     if (req.cloudinary?.photoUrl) {
@@ -64,18 +68,26 @@ exports.updateUserProfile = async (req, res) => {
       console.log("✅ [UPDATE_PROFILE] Photo mise à jour:", updateData.photoUrl);
     }
 
-    const updatedProfile = await UserProfile.findOneAndUpdate(
-      { userId: req.user._id },
-      updateData,
-      { new: true }
-    );
-
-    if (!updatedProfile) {
-      return res.status(404).json({ message: "Profil non trouvé" });
+    // Utiliser upsert pour créer le profil s'il n'existe pas
+    // Si le profil n'existe pas et que fullName n'est pas fourni, utiliser le nom de l'utilisateur
+    if (!updateData.fullName && req.user?.fullName) {
+      updateData.fullName = req.user.fullName;
     }
 
+    const updatedProfile = await UserProfile.findOneAndUpdate(
+      { userId: userId },
+      updateData,
+      { 
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true
+      }
+    );
+
+    console.log("✅ [UPDATE_PROFILE] Profil mis à jour ou créé avec succès");
     res.status(200).json({ message: "Profil mis à jour", profile: updatedProfile });
   } catch (error) {
+    console.error("❌ [UPDATE_PROFILE] Erreur:", error);
     res.status(500).json({ message: error.message });
   }
 };

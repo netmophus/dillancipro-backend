@@ -16,14 +16,81 @@ async function resolveAgenceId(req, fallbackFromBody = true) {
 exports.meGetProfil = async (req, res) => {
   try {
     const userId = req.user.id;
-    const profil = await ProfilCommercial.findOne({ userId })
+    let profil = await ProfilCommercial.findOne({ userId })
       .populate("userId", "phone fullName")
-      .populate("agenceId", "nom");
+      .populate("agenceId", "nom")
+      .populate("assignedIlots", "numeroIlot")
+      .populate("assignedParcelles", "numeroParcelle");
+    
+    // Si le profil n'existe pas, créer un profil vide avec upsert
     if (!profil) {
-      return res.status(404).json({ message: "Profil introuvable" });
+      console.log("⚠️ [ME_GET_PROFIL] Aucun profil trouvé, création d'un profil vide");
+      
+      // Récupérer l'agenceId depuis le User si disponible
+      const User = require("../../models/User");
+      const user = await User.findById(userId).select("agenceId fullName");
+      const agenceId = user?.agenceId || req.user.agenceId || null;
+      
+      profil = await ProfilCommercial.findOneAndUpdate(
+        { userId },
+        {
+          userId,
+          fullName: user?.fullName || req.user.fullName || "",
+          agenceId: agenceId,
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      )
+        .populate("userId", "phone fullName")
+        .populate("agenceId", "nom")
+        .populate("assignedIlots", "numeroIlot")
+        .populate("assignedParcelles", "numeroParcelle");
     }
-    res.json(profil);
+    
+    // S'assurer que tous les champs sont présents même s'ils sont vides
+    const profilData = profil.toObject ? profil.toObject() : profil;
+    
+    // Initialiser les champs manquants avec des valeurs par défaut
+    if (!profilData.adresse) {
+      profilData.adresse = {
+        ligne1: "",
+        ligne2: "",
+        ville: "",
+        region: "",
+        codePostal: "",
+        pays: "",
+      };
+    }
+    
+    if (!profilData.commission) {
+      profilData.commission = {
+        mode: "pourcentage",
+        valeur: 0,
+        devise: "XOF",
+        actif: true,
+      };
+    }
+    
+    if (!profilData.pieceIdentite) {
+      profilData.pieceIdentite = {
+        typePiece: "AUTRE",
+        numero: "",
+        fichierUrl: "",
+        dateDelivrance: null,
+        dateExpiration: null,
+      };
+    }
+    
+    if (!profilData.assignedIlots) {
+      profilData.assignedIlots = [];
+    }
+    
+    if (!profilData.assignedParcelles) {
+      profilData.assignedParcelles = [];
+    }
+    
+    res.json(profilData);
   } catch (e) {
+    console.error("❌ [ME_GET_PROFIL] Erreur:", e);
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
@@ -53,12 +120,64 @@ exports.getProfil = async (req, res) => {
     const userId = req.params.id;
     const profil = await ProfilCommercial.findOne({ userId })
       .populate("userId", "phone fullName")
-      .populate("agenceId", "nom");
+      .populate("agenceId", "nom")
+      .populate("assignedIlots", "numeroIlot")
+      .populate("assignedParcelles", "numeroParcelle");
+    
     if (!profil) {
       return res.status(404).json({ message: "Profil introuvable" });
     }
-    res.json(profil);
+    
+    // S'assurer que tous les champs sont présents même s'ils sont vides
+    const profilData = profil.toObject ? profil.toObject() : profil;
+    
+    // Initialiser les champs manquants avec des valeurs par défaut
+    if (!profilData.adresse) {
+      profilData.adresse = {
+        ligne1: "",
+        ligne2: "",
+        ville: "",
+        region: "",
+        codePostal: "",
+        pays: "",
+      };
+    }
+    
+    if (!profilData.commission) {
+      profilData.commission = {
+        mode: "pourcentage",
+        valeur: 0,
+        devise: "XOF",
+        actif: true,
+      };
+    }
+    
+    if (!profilData.pieceIdentite) {
+      profilData.pieceIdentite = {
+        typePiece: "AUTRE",
+        numero: "",
+        fichierUrl: "",
+        dateDelivrance: null,
+        dateExpiration: null,
+      };
+    }
+    
+    if (!profilData.assignedIlots) {
+      profilData.assignedIlots = [];
+    }
+    
+    if (!profilData.assignedParcelles) {
+      profilData.assignedParcelles = [];
+    }
+    
+    // S'assurer que photoUrl est bien renvoyée même si vide
+    if (!profilData.photoUrl) {
+      profilData.photoUrl = "";
+    }
+    
+    res.json(profilData);
   } catch (e) {
+    console.error("❌ [GET_PROFIL] Erreur:", e);
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
