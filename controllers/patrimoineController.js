@@ -284,8 +284,10 @@ exports.getPatrimoineStats = async (req, res) => {
  */
 exports.getPublicPatrimoine = async (req, res) => {
   try {
-    // Récupérer tous les biens immobiliers (sans filtres pour l'instant)
-    const biens = await BienImmobilier.find({})
+    // Récupérer seulement les biens immobiliers vérifiés par l'admin
+    const biens = await BienImmobilier.find({
+      verified: true // Seulement les biens vérifiés
+    })
     .populate("agenceId", "nom ville telephone")
     .populate("affecteeA", "fullName phone email")
     .sort({ createdAt: -1 })

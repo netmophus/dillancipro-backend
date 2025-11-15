@@ -235,6 +235,20 @@ const BienImmobilierSchema = new mongoose.Schema(
       unique: true,
       sparse: true,
     },
+    
+    // Système de vérification par l'admin général
+    verified: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    verifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User", // Admin général qui a vérifié
+    },
+    verifiedAt: {
+      type: Date,
+    },
   },
   {
     timestamps: true,

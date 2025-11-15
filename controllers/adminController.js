@@ -1,5 +1,7 @@
 const User = require("../models/User");
 const Agence = require("../models/Agence");
+const Parcelle = require("../models/agences/Parcelle");
+const BienImmobilier = require("../models/agences/BienImmobilier");
 
 
 
@@ -309,6 +311,271 @@ const updateAgence = async (req, res) => {
 };
 
 
+// ========== SYSTÈME DE VÉRIFICATION DES PARCELLES ET BIENS ==========
+
+/**
+ * Vérifier une parcelle
+ * PUT /api/admin/parcelles/:id/verify
+ */
+const verifyParcelle = async (req, res) => {
+  try {
+    const parcelleId = req.params.id;
+    const adminId = req.user._id; // Admin général qui vérifie
+
+    const parcelle = await Parcelle.findById(parcelleId);
+    if (!parcelle) {
+      return res.status(404).json({ message: "Parcelle non trouvée" });
+    }
+
+    parcelle.verified = true;
+    parcelle.verifiedBy = adminId;
+    parcelle.verifiedAt = new Date();
+    await parcelle.save();
+
+    const parcellePopulated = await Parcelle.findById(parcelleId)
+      .populate("agenceId", "nom")
+      .populate("verifiedBy", "fullName");
+
+    res.status(200).json({
+      message: "Parcelle vérifiée avec succès",
+      parcelle: parcellePopulated,
+    });
+  } catch (error) {
+    console.error("❌ Erreur vérification parcelle:", error);
+    res.status(500).json({ message: "Erreur serveur", error: error.message });
+  }
+};
+
+/**
+ * Déverifier une parcelle
+ * PUT /api/admin/parcelles/:id/unverify
+ */
+const unverifyParcelle = async (req, res) => {
+  try {
+    const parcelleId = req.params.id;
+
+    const parcelle = await Parcelle.findById(parcelleId);
+    if (!parcelle) {
+      return res.status(404).json({ message: "Parcelle non trouvée" });
+    }
+
+    parcelle.verified = false;
+    parcelle.verifiedBy = null;
+    parcelle.verifiedAt = null;
+    await parcelle.save();
+
+    res.status(200).json({
+      message: "Vérification de la parcelle annulée",
+      parcelle,
+    });
+  } catch (error) {
+    console.error("❌ Erreur dévérification parcelle:", error);
+    res.status(500).json({ message: "Erreur serveur", error: error.message });
+  }
+};
+
+/**
+ * Vérifier un bien immobilier
+ * PUT /api/admin/biens/:id/verify
+ */
+const verifyBien = async (req, res) => {
+  try {
+    const bienId = req.params.id;
+    const adminId = req.user._id; // Admin général qui vérifie
+
+    const bien = await BienImmobilier.findById(bienId);
+    if (!bien) {
+      return res.status(404).json({ message: "Bien immobilier non trouvé" });
+    }
+
+    bien.verified = true;
+    bien.verifiedBy = adminId;
+    bien.verifiedAt = new Date();
+    await bien.save();
+
+    const bienPopulated = await BienImmobilier.findById(bienId)
+      .populate("agenceId", "nom")
+      .populate("verifiedBy", "fullName");
+
+    res.status(200).json({
+      message: "Bien immobilier vérifié avec succès",
+      bien: bienPopulated,
+    });
+  } catch (error) {
+    console.error("❌ Erreur vérification bien:", error);
+    res.status(500).json({ message: "Erreur serveur", error: error.message });
+  }
+};
+
+/**
+ * Déverifier un bien immobilier
+ * PUT /api/admin/biens/:id/unverify
+ */
+const unverifyBien = async (req, res) => {
+  try {
+    const bienId = req.params.id;
+
+    const bien = await BienImmobilier.findById(bienId);
+    if (!bien) {
+      return res.status(404).json({ message: "Bien immobilier non trouvé" });
+    }
+
+    bien.verified = false;
+    bien.verifiedBy = null;
+    bien.verifiedAt = null;
+    await bien.save();
+
+    res.status(200).json({
+      message: "Vérification du bien immobilier annulée",
+      bien,
+    });
+  } catch (error) {
+    console.error("❌ Erreur dévérification bien:", error);
+    res.status(500).json({ message: "Erreur serveur", error: error.message });
+  }
+};
+
+/**
+ * Récupérer les parcelles en attente de vérification
+ * GET /api/admin/parcelles/pending
+ */
+const getParcellesPending = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const query = { verified: false };
+    
+    // Filtrer par agence si fourni
+    if (req.query.agenceId) {
+      query.agenceId = req.query.agenceId;
+    }
+
+    const total = await Parcelle.countDocuments(query);
+    const parcelles = await Parcelle.find(query)
+      .populate("agenceId", "nom ville")
+      .populate("ilot", "numeroIlot")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    res.status(200).json({
+      parcelles,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    });
+  } catch (error) {
+    console.error("❌ Erreur récupération parcelles en attente:", error);
+    res.status(500).json({ message: "Erreur serveur", error: error.message });
+  }
+};
+
+/**
+ * Récupérer les biens en attente de vérification
+ * GET /api/admin/biens/pending
+ */
+const getBiensPending = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const query = { verified: false };
+    
+    // Filtrer par agence si fourni
+    if (req.query.agenceId) {
+      query.agenceId = req.query.agenceId;
+    }
+
+    const total = await BienImmobilier.countDocuments(query);
+    const biens = await BienImmobilier.find(query)
+      .populate("agenceId", "nom ville")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    res.status(200).json({
+      biens,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    });
+  } catch (error) {
+    console.error("❌ Erreur récupération biens en attente:", error);
+    res.status(500).json({ message: "Erreur serveur", error: error.message });
+  }
+};
+
+/**
+ * Vérifier plusieurs parcelles en masse
+ * PUT /api/admin/parcelles/bulk-verify
+ */
+const bulkVerifyParcelles = async (req, res) => {
+  try {
+    const { parcelleIds } = req.body; // Array d'IDs
+    const adminId = req.user._id;
+
+    if (!Array.isArray(parcelleIds) || parcelleIds.length === 0) {
+      return res.status(400).json({ message: "Liste d'IDs de parcelles requise" });
+    }
+
+    const result = await Parcelle.updateMany(
+      { _id: { $in: parcelleIds } },
+      {
+        $set: {
+          verified: true,
+          verifiedBy: adminId,
+          verifiedAt: new Date(),
+        },
+      }
+    );
+
+    res.status(200).json({
+      message: `${result.modifiedCount} parcelle(s) vérifiée(s) avec succès`,
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error("❌ Erreur vérification en masse parcelles:", error);
+    res.status(500).json({ message: "Erreur serveur", error: error.message });
+  }
+};
+
+/**
+ * Vérifier plusieurs biens en masse
+ * PUT /api/admin/biens/bulk-verify
+ */
+const bulkVerifyBiens = async (req, res) => {
+  try {
+    const { bienIds } = req.body; // Array d'IDs
+    const adminId = req.user._id;
+
+    if (!Array.isArray(bienIds) || bienIds.length === 0) {
+      return res.status(400).json({ message: "Liste d'IDs de biens requise" });
+    }
+
+    const result = await BienImmobilier.updateMany(
+      { _id: { $in: bienIds } },
+      {
+        $set: {
+          verified: true,
+          verifiedBy: adminId,
+          verifiedAt: new Date(),
+        },
+      }
+    );
+
+    res.status(200).json({
+      message: `${result.modifiedCount} bien(s) vérifié(s) avec succès`,
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error("❌ Erreur vérification en masse biens:", error);
+    res.status(500).json({ message: "Erreur serveur", error: error.message });
+  }
+};
+
 module.exports = {
   createAdminUser,
    getAllUsers,
@@ -318,4 +585,13 @@ module.exports = {
    getUsersByRole,
    unlinkAdminFromAgence,
    updateAgence,
+   // Fonctions de vérification
+   verifyParcelle,
+   unverifyParcelle,
+   verifyBien,
+   unverifyBien,
+   getParcellesPending,
+   getBiensPending,
+   bulkVerifyParcelles,
+   bulkVerifyBiens,
 };

@@ -519,9 +519,10 @@ exports.getAllParcelles = async (req, res) => {
  */
 exports.getPublicParcelles = async (req, res) => {
   try {
-    // Récupérer seulement les parcelles à vendre (statut: "avendre")
+    // Récupérer seulement les parcelles à vendre (statut: "avendre") ET vérifiées par l'admin
     const parcelles = await Parcelle.find({ 
-      statut: "avendre"
+      statut: "avendre",
+      verified: true // Seulement les parcelles vérifiées
     })
     .populate("ilot", "numeroIlot")
     .populate("agenceId", "nom ville telephone")

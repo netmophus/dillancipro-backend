@@ -10,6 +10,15 @@ const {
    getUsersByRole,
    unlinkAdminFromAgence,
    updateAgence,
+   // Fonctions de vérification
+   verifyParcelle,
+   unverifyParcelle,
+   verifyBien,
+   unverifyBien,
+   getParcellesPending,
+   getBiensPending,
+   bulkVerifyParcelles,
+   bulkVerifyBiens,
 } = require("../controllers/adminController");
 const User = require("../models/User");
 
@@ -61,5 +70,18 @@ router.patch("/users/:id/status", authMiddleware, authorizeRoles("Admin"), async
 
 // 🏛️ Routes géographiques (villes, quartiers, zones)
 router.use("/geographic", geographicRoutes);
+
+// ========== ROUTES DE VÉRIFICATION DES PARCELLES ET BIENS ==========
+// Routes pour les parcelles
+router.put("/parcelles/:id/verify", authMiddleware, authorizeRoles("Admin"), verifyParcelle);
+router.put("/parcelles/:id/unverify", authMiddleware, authorizeRoles("Admin"), unverifyParcelle);
+router.get("/parcelles/pending", authMiddleware, authorizeRoles("Admin"), getParcellesPending);
+router.put("/parcelles/bulk-verify", authMiddleware, authorizeRoles("Admin"), bulkVerifyParcelles);
+
+// Routes pour les biens immobiliers
+router.put("/biens/:id/verify", authMiddleware, authorizeRoles("Admin"), verifyBien);
+router.put("/biens/:id/unverify", authMiddleware, authorizeRoles("Admin"), unverifyBien);
+router.get("/biens/pending", authMiddleware, authorizeRoles("Admin"), getBiensPending);
+router.put("/biens/bulk-verify", authMiddleware, authorizeRoles("Admin"), bulkVerifyBiens);
 
 module.exports = router;
