@@ -170,7 +170,9 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const UserProfile = require("../models/UserProfile");
 const PasswordResetCode = require("../models/PasswordResetCode");
+const VerificationCode = require("../models/VerificationCode");
 const { sendSMS } = require("../services/smsService");
+const { sendPasswordResetCode, sendVerificationCode } = require("../services/emailService");
 
 
 // 🔐 Générer un token JWT
@@ -245,9 +247,58 @@ exports.registerClient = async (req, res) => {
     });
     await newProfile.save();
 
-    res.status(201).json({
-      message: "Client inscrit avec succès.",
+    // Générer un code OTP à 6 chiffres
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Définir l'expiration (15 minutes)
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 15);
+
+    // Construire l'objet pour créer le code de vérification
+    const verificationCodeData = {
       userId: newUser._id,
+      code: verificationCode,
+      expiresAt,
+      verified: false,
+      attempts: 0,
+    };
+    if (phoneProvided) {
+      verificationCodeData.phone = phone.trim();
+    }
+    if (emailProvided) {
+      verificationCodeData.email = email.trim().toLowerCase();
+    }
+
+    // Créer le code de vérification
+    await VerificationCode.create(verificationCodeData);
+
+    // Envoyer le code selon la méthode choisie
+    if (phoneProvided) {
+      // Envoyer par SMS
+      const message = `Votre code de vérification GeoFoncier est : ${verificationCode}. Ce code expire dans 15 minutes. Ne le partagez avec personne.`;
+      const smsResult = await sendSMS(phone.trim(), message);
+
+      if (!smsResult.success) {
+        console.error("❌ [REGISTER_CLIENT] Échec envoi SMS OTP :", smsResult.error);
+      } else {
+        console.log(`✅ [REGISTER_CLIENT] Code OTP envoyé par SMS à ${phone.trim()}`);
+      }
+    } else {
+      // Envoyer par email
+      const emailResult = await sendVerificationCode(email.trim().toLowerCase(), verificationCode, fullName.trim());
+
+      if (!emailResult || !emailResult.success) {
+        console.error("❌ [REGISTER_CLIENT] Échec envoi email OTP :", emailResult?.error);
+      } else {
+        console.log(`✅ [REGISTER_CLIENT] Code OTP envoyé par email à ${email.trim().toLowerCase()}`);
+      }
+    }
+
+    res.status(201).json({
+      message: "Compte créé avec succès. Un code de vérification vous a été envoyé pour activer votre compte.",
+      userId: newUser._id,
+      requiresVerification: true,
+      method: phoneProvided ? "SMS" : "email"
     });
   } catch (error) {
     console.error("❌ Erreur inscription client :", error);
@@ -297,6 +348,7 @@ exports.register = async (req, res) => {
       password: hashedPassword,
       role: role || "User",
       fullName: fullName.trim(),
+      isActive: false, // Compte désactivé jusqu'à vérification OTP
     };
     
     // Ajouter phone seulement s'il est fourni
@@ -321,7 +373,61 @@ exports.register = async (req, res) => {
       });
     }
 
-    res.status(201).json({ message: "Utilisateur créé avec succès", user: newUser });
+    // Générer un code OTP à 6 chiffres
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Définir l'expiration (15 minutes)
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 15);
+
+    // Construire l'objet pour créer le code de vérification
+    const verificationCodeData = {
+      userId: newUser._id,
+      code: verificationCode,
+      expiresAt,
+      verified: false,
+      attempts: 0,
+    };
+    if (phoneProvided) {
+      verificationCodeData.phone = phone.trim();
+    }
+    if (emailProvided) {
+      verificationCodeData.email = email.trim().toLowerCase();
+    }
+
+    // Créer le code de vérification
+    await VerificationCode.create(verificationCodeData);
+
+    // Envoyer le code selon la méthode choisie
+    if (phoneProvided) {
+      // Envoyer par SMS
+      const message = `Votre code de vérification GeoFoncier est : ${verificationCode}. Ce code expire dans 15 minutes. Ne le partagez avec personne.`;
+      const smsResult = await sendSMS(phone.trim(), message);
+
+      if (!smsResult.success) {
+        console.error("❌ [REGISTER] Échec envoi SMS OTP :", smsResult.error);
+        // On continue quand même, l'utilisateur pourra demander un nouveau code
+      } else {
+        console.log(`✅ [REGISTER] Code OTP envoyé par SMS à ${phone.trim()}`);
+      }
+    } else {
+      // Envoyer par email
+      const emailResult = await sendVerificationCode(email.trim().toLowerCase(), verificationCode, fullName.trim());
+
+      if (!emailResult || !emailResult.success) {
+        console.error("❌ [REGISTER] Échec envoi email OTP :", emailResult?.error);
+        // On continue quand même, l'utilisateur pourra demander un nouveau code
+      } else {
+        console.log(`✅ [REGISTER] Code OTP envoyé par email à ${email.trim().toLowerCase()}`);
+      }
+    }
+
+    res.status(201).json({ 
+      message: "Compte créé avec succès. Un code de vérification vous a été envoyé pour activer votre compte.",
+      userId: newUser._id,
+      requiresVerification: true,
+      method: phoneProvided ? "SMS" : "email"
+    });
   } catch (error) {
     console.error("❌ Erreur register:", error);
     res.status(500).json({ message: error.message });
@@ -358,7 +464,9 @@ exports.login = async (req, res) => {
     // Vérifier si l'utilisateur est actif
     if (!user.isActive) {
       return res.status(403).json({ 
-        message: "Votre compte est inactif. Veuillez contacter l'administrateur." 
+        message: "Votre compte n'est pas encore activé. Veuillez vérifier votre téléphone ou email pour le code d'activation.",
+        requiresVerification: true,
+        userId: user._id
       });
     }
 
@@ -398,21 +506,34 @@ exports.login = async (req, res) => {
 
 // ==================== MOT DE PASSE OUBLIÉ ====================
 
-// 📱 POST /api/auth/forgot-password - Demander la réinitialisation du mot de passe
+// 📱📧 POST /api/auth/forgot-password - Demander la réinitialisation du mot de passe
 exports.requestPasswordReset = async (req, res) => {
   try {
-    const { phone } = req.body;
+    const { phone, email } = req.body;
 
-    if (!phone) {
-      return res.status(400).json({ message: "Le numéro de téléphone est requis" });
+    console.log("🔍 [PASSWORD_RESET] Requête reçue:", { phone: phone ? "fourni" : "non fourni", email: email ? "fourni" : "non fourni" });
+
+    // Vérifier qu'au moins phone ou email est fourni
+    const phoneProvided = phone && typeof phone === "string" && phone.trim() !== "";
+    const emailProvided = email && typeof email === "string" && email.trim() !== "";
+    
+    if (!phoneProvided && !emailProvided) {
+      return res.status(400).json({ message: "Le numéro de téléphone ou l'email est requis" });
     }
 
-    // Vérifier si l'utilisateur existe
-    const user = await User.findOne({ phone });
+    // Chercher l'utilisateur par phone ou email
+    let user;
+    if (phoneProvided) {
+      user = await User.findOne({ phone: phone.trim() });
+    } else if (emailProvided) {
+      user = await User.findOne({ email: email.trim().toLowerCase() });
+    }
+
     if (!user) {
-      // Pour des raisons de sécurité, on ne révèle pas si le numéro existe ou non
+      // Pour des raisons de sécurité, on ne révèle pas si le numéro/email existe ou non
+      const method = phoneProvided ? "SMS" : "email";
       return res.status(200).json({ 
-        message: "Si ce numéro est enregistré, vous recevrez un code de vérification par SMS" 
+        message: `Si ce ${phoneProvided ? "numéro" : "email"} est enregistré, vous recevrez un code de vérification par ${method}` 
       });
     }
 
@@ -430,65 +551,128 @@ exports.requestPasswordReset = async (req, res) => {
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + 10);
 
-    // Supprimer les anciens codes non vérifiés pour ce numéro
-    await PasswordResetCode.deleteMany({ 
-      phone, 
-      verified: false 
-    });
+    // Construire l'objet de recherche pour supprimer les anciens codes
+    const searchCriteria = { verified: false };
+    if (phoneProvided) {
+      searchCriteria.phone = phone.trim();
+    } else {
+      searchCriteria.email = email.trim().toLowerCase();
+    }
 
-    // Créer le nouveau code de réinitialisation
-    const resetCode = await PasswordResetCode.create({
-      phone,
+    // Supprimer les anciens codes non vérifiés
+    await PasswordResetCode.deleteMany(searchCriteria);
+
+    // Construire l'objet pour créer le nouveau code
+    const resetCodeData = {
       code,
       expiresAt,
       verified: false,
       attempts: 0,
-    });
-
-    // Préparer le message SMS
-    const message = `Votre code de réinitialisation de mot de passe est : ${code}. Ce code expire dans 10 minutes. Ne le partagez avec personne.`;
-
-    // Envoyer le SMS
-    const smsResult = await sendSMS(phone, message);
-
-    if (!smsResult.success) {
-      // Supprimer le code si l'envoi SMS a échoué
-      await PasswordResetCode.findByIdAndDelete(resetCode._id);
-      const errorMessage = smsResult.error || "Erreur lors de l'envoi du SMS. Veuillez réessayer plus tard.";
-      console.error("❌ [PASSWORD_RESET] Échec envoi SMS :", errorMessage);
-      return res.status(500).json({ 
-        message: errorMessage 
-      });
+    };
+    if (phoneProvided) {
+      resetCodeData.phone = phone.trim();
+    }
+    if (emailProvided) {
+      resetCodeData.email = email.trim().toLowerCase();
     }
 
-    console.log(`✅ [PASSWORD_RESET] Code envoyé à ${phone}`);
-
-    // Pour des raisons de sécurité, on ne révèle pas si le numéro existe
-    return res.status(200).json({ 
-      message: "Si ce numéro est enregistré, vous recevrez un code de vérification par SMS",
-      expiresIn: 600 // 10 minutes en secondes
+    console.log("🔍 [PASSWORD_RESET] Données du code:", { 
+      phone: resetCodeData.phone || "non fourni", 
+      email: resetCodeData.email || "non fourni",
+      code: resetCodeData.code 
     });
+
+    // Créer le nouveau code de réinitialisation
+    let resetCode;
+    try {
+      resetCode = await PasswordResetCode.create(resetCodeData);
+      console.log("✅ [PASSWORD_RESET] Code créé avec succès:", resetCode._id);
+    } catch (createError) {
+      console.error("❌ [PASSWORD_RESET] Erreur lors de la création du code:", createError);
+      throw new Error(`Erreur lors de la création du code de réinitialisation: ${createError.message}`);
+    }
+
+    // Récupérer le nom complet de l'utilisateur
+    const profile = await UserProfile.findOne({ userId: user._id });
+    const fullName = user.fullName || profile?.fullName || "Utilisateur";
+
+    // Envoyer le code selon la méthode choisie
+    if (phoneProvided) {
+      // Envoyer par SMS
+      const message = `Votre code de réinitialisation de mot de passe est : ${code}. Ce code expire dans 10 minutes. Ne le partagez avec personne.`;
+      const smsResult = await sendSMS(phone.trim(), message);
+
+      if (!smsResult.success) {
+        await PasswordResetCode.findByIdAndDelete(resetCode._id);
+        const errorMessage = smsResult.error || "Erreur lors de l'envoi du SMS. Veuillez réessayer plus tard.";
+        console.error("❌ [PASSWORD_RESET] Échec envoi SMS :", errorMessage);
+        return res.status(500).json({ message: errorMessage });
+      }
+
+      console.log(`✅ [PASSWORD_RESET] Code envoyé par SMS à ${phone.trim()}`);
+      return res.status(200).json({ 
+        message: "Si ce numéro est enregistré, vous recevrez un code de vérification par SMS",
+        expiresIn: 600
+      });
+    } else {
+      // Envoyer par email
+      try {
+        const emailResult = await sendPasswordResetCode(email.trim().toLowerCase(), code, fullName);
+
+        if (!emailResult || !emailResult.success) {
+          await PasswordResetCode.findByIdAndDelete(resetCode._id);
+          const errorMessage = emailResult?.error || "Erreur lors de l'envoi de l'email. Veuillez réessayer plus tard ou utiliser la réinitialisation par téléphone.";
+          console.error("❌ [PASSWORD_RESET] Échec envoi email :", errorMessage);
+          return res.status(500).json({ message: errorMessage });
+        }
+
+        console.log(`✅ [PASSWORD_RESET] Code envoyé par email à ${email.trim().toLowerCase()}`);
+        return res.status(200).json({ 
+          message: "Si cet email est enregistré, vous recevrez un code de vérification par email",
+          expiresIn: 600
+        });
+      } catch (emailError) {
+        await PasswordResetCode.findByIdAndDelete(resetCode._id);
+        console.error("❌ [PASSWORD_RESET] Exception lors de l'envoi email :", emailError);
+        return res.status(500).json({ 
+          message: "Erreur lors de l'envoi de l'email. Veuillez réessayer plus tard ou utiliser la réinitialisation par téléphone." 
+        });
+      }
+    }
 
   } catch (error) {
     console.error("❌ [PASSWORD_RESET] Erreur:", error);
-    res.status(500).json({ message: "Erreur serveur lors de la demande de réinitialisation" });
+    console.error("❌ [PASSWORD_RESET] Stack:", error.stack);
+    res.status(500).json({ 
+      message: "Erreur serveur lors de la demande de réinitialisation",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
   }
 };
 
 // ✅ POST /api/auth/verify-reset-code - Vérifier le code de réinitialisation
 exports.verifyResetCode = async (req, res) => {
   try {
-    const { phone, code } = req.body;
+    const { phone, email, code } = req.body;
 
-    if (!phone || !code) {
-      return res.status(400).json({ message: "Le numéro de téléphone et le code sont requis" });
+    // Vérifier qu'au moins phone ou email est fourni
+    const phoneProvided = phone && phone.trim() !== "";
+    const emailProvided = email && email.trim() !== "";
+    
+    if ((!phoneProvided && !emailProvided) || !code) {
+      return res.status(400).json({ message: "Le numéro de téléphone ou l'email et le code sont requis" });
     }
 
-    // Trouver le code de réinitialisation pour ce numéro
-    const resetCode = await PasswordResetCode.findOne({
-      phone,
-      verified: false,
-    });
+    // Construire la requête de recherche
+    const searchCriteria = { verified: false };
+    if (phoneProvided) {
+      searchCriteria.phone = phone.trim();
+    } else {
+      searchCriteria.email = email.trim().toLowerCase();
+    }
+
+    // Trouver le code de réinitialisation
+    const resetCode = await PasswordResetCode.findOne(searchCriteria);
 
     // Vérifier si le code existe
     if (!resetCode) {
@@ -525,7 +709,8 @@ exports.verifyResetCode = async (req, res) => {
     resetCode.verified = true;
     await resetCode.save();
 
-    console.log(`✅ [PASSWORD_RESET] Code vérifié pour ${phone}`);
+    const identifier = phoneProvided ? phone.trim() : email.trim().toLowerCase();
+    console.log(`✅ [PASSWORD_RESET] Code vérifié pour ${identifier}`);
 
     return res.status(200).json({ 
       message: "Code de vérification valide",
@@ -541,11 +726,15 @@ exports.verifyResetCode = async (req, res) => {
 // 🔐 POST /api/auth/reset-password - Réinitialiser le mot de passe
 exports.resetPassword = async (req, res) => {
   try {
-    const { phone, code, newPassword } = req.body;
+    const { phone, email, code, newPassword } = req.body;
 
-    if (!phone || !code || !newPassword) {
+    // Vérifier qu'au moins phone ou email est fourni
+    const phoneProvided = phone && phone.trim() !== "";
+    const emailProvided = email && email.trim() !== "";
+    
+    if ((!phoneProvided && !emailProvided) || !code || !newPassword) {
       return res.status(400).json({ 
-        message: "Le numéro de téléphone, le code et le nouveau mot de passe sont requis" 
+        message: "Le numéro de téléphone ou l'email, le code et le nouveau mot de passe sont requis" 
       });
     }
 
@@ -556,12 +745,19 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    // Trouver le code de réinitialisation vérifié
-    const resetCode = await PasswordResetCode.findOne({
-      phone,
+    // Construire la requête de recherche pour le code
+    const searchCriteria = {
       code,
       verified: true,
-    });
+    };
+    if (phoneProvided) {
+      searchCriteria.phone = phone.trim();
+    } else {
+      searchCriteria.email = email.trim().toLowerCase();
+    }
+
+    // Trouver le code de réinitialisation vérifié
+    const resetCode = await PasswordResetCode.findOne(searchCriteria);
 
     // Vérifier si le code existe et est vérifié
     if (!resetCode) {
@@ -577,7 +773,13 @@ exports.resetPassword = async (req, res) => {
     }
 
     // Trouver l'utilisateur
-    const user = await User.findOne({ phone });
+    let user;
+    if (phoneProvided) {
+      user = await User.findOne({ phone: phone.trim() });
+    } else {
+      user = await User.findOne({ email: email.trim().toLowerCase() });
+    }
+
     if (!user) {
       await PasswordResetCode.findByIdAndDelete(resetCode._id);
       return res.status(404).json({ message: "Utilisateur non trouvé" });
@@ -590,7 +792,8 @@ exports.resetPassword = async (req, res) => {
     // Supprimer le code de réinitialisation utilisé
     await PasswordResetCode.findByIdAndDelete(resetCode._id);
 
-    console.log(`✅ [PASSWORD_RESET] Mot de passe réinitialisé pour ${phone}`);
+    const identifier = phoneProvided ? phone.trim() : email.trim().toLowerCase();
+    console.log(`✅ [PASSWORD_RESET] Mot de passe réinitialisé pour ${identifier}`);
 
     return res.status(200).json({ 
       message: "Mot de passe réinitialisé avec succès. Vous pouvez maintenant vous connecter." 
@@ -599,5 +802,222 @@ exports.resetPassword = async (req, res) => {
   } catch (error) {
     console.error("❌ [RESET_PASSWORD] Erreur:", error);
     res.status(500).json({ message: "Erreur serveur lors de la réinitialisation du mot de passe" });
+  }
+};
+
+// ==================== VÉRIFICATION DE COMPTE (OTP) ====================
+
+// ✅ POST /api/auth/verify-account - Vérifier le code OTP et activer le compte
+exports.verifyAccount = async (req, res) => {
+  try {
+    const { phone, email, code, userId } = req.body;
+
+    // Vérifier qu'au moins phone ou email est fourni, ainsi que le code et userId
+    const phoneProvided = phone && typeof phone === "string" && phone.trim() !== "";
+    const emailProvided = email && typeof email === "string" && email.trim() !== "";
+    
+    if ((!phoneProvided && !emailProvided) || !code || !userId) {
+      return res.status(400).json({ 
+        message: "Le numéro de téléphone ou l'email, le code et l'ID utilisateur sont requis" 
+      });
+    }
+
+    // Construire la requête de recherche
+    const searchCriteria = {
+      userId,
+      verified: false,
+    };
+    if (phoneProvided) {
+      searchCriteria.phone = phone.trim();
+    } else {
+      searchCriteria.email = email.trim().toLowerCase();
+    }
+
+    // Trouver le code de vérification
+    const verificationCode = await VerificationCode.findOne(searchCriteria);
+
+    // Vérifier si le code existe
+    if (!verificationCode) {
+      return res.status(400).json({ message: "Code de vérification invalide ou expiré" });
+    }
+
+    // Vérifier si le code n'a pas expiré
+    if (new Date() > verificationCode.expiresAt) {
+      // Ne pas supprimer le code pour garder une trace même s'il est expiré
+      return res.status(400).json({ message: "Le code de vérification a expiré. Veuillez demander un nouveau code." });
+    }
+
+    // Vérifier le nombre de tentatives (max 5)
+    if (verificationCode.attempts >= 5) {
+      // Ne pas supprimer le code pour garder une trace même après trop de tentatives
+      return res.status(400).json({ 
+        message: "Trop de tentatives échouées. Veuillez demander un nouveau code." 
+      });
+    }
+
+    // Vérifier si le code correspond
+    if (verificationCode.code !== code) {
+      // Incrémenter le nombre de tentatives
+      verificationCode.attempts += 1;
+      await verificationCode.save();
+
+      const remainingAttempts = 5 - verificationCode.attempts;
+      return res.status(400).json({ 
+        message: `Code incorrect. ${remainingAttempts > 0 ? `Il vous reste ${remainingAttempts} tentative(s).` : "Trop de tentatives échouées."}` 
+      });
+    }
+
+    // Trouver l'utilisateur
+    const user = await User.findById(userId);
+    if (!user) {
+      // Ne pas supprimer le code pour garder une trace même si l'utilisateur n'existe pas
+      verificationCode.verified = false;
+      verificationCode.attempts += 1;
+      await verificationCode.save();
+      return res.status(404).json({ message: "Utilisateur non trouvé" });
+    }
+
+    // Vérifier que le compte n'est pas déjà activé (sécurité supplémentaire)
+    if (user.isActive) {
+      // Marquer le code comme vérifié même si le compte est déjà actif (pour la trace)
+      verificationCode.verified = true;
+      verificationCode.verifiedAt = new Date();
+      await verificationCode.save();
+      
+      return res.status(200).json({ 
+        message: "Ce compte est déjà activé.",
+        verified: true 
+      });
+    }
+
+    // IMPORTANT : Activer le compte UNIQUEMENT après vérification réussie de l'OTP
+    const activationDate = new Date();
+    user.isActive = true;
+    user.activatedAt = activationDate; // Garder une trace de la date d'activation
+    await user.save();
+
+    // Marquer le code comme vérifié et enregistrer la date de vérification (pour garder une trace)
+    verificationCode.verified = true;
+    verificationCode.verifiedAt = new Date();
+    await verificationCode.save();
+
+    const identifier = phoneProvided ? phone.trim() : email.trim().toLowerCase();
+    console.log(`✅ [ACCOUNT_VERIFICATION] Compte activé pour ${identifier} - Code OTP vérifié le ${verificationCode.verifiedAt}`);
+
+    return res.status(200).json({ 
+      message: "Compte activé avec succès. Vous pouvez maintenant vous connecter.",
+      verified: true,
+      activatedAt: verificationCode.verifiedAt
+    });
+
+  } catch (error) {
+    console.error("❌ [VERIFY_ACCOUNT] Erreur:", error);
+    res.status(500).json({ message: "Erreur serveur lors de la vérification du compte" });
+  }
+};
+
+// 📱📧 POST /api/auth/resend-verification-code - Renvoyer le code de vérification
+exports.resendVerificationCode = async (req, res) => {
+  try {
+    const { phone, email, userId } = req.body;
+
+    // Vérifier qu'au moins phone ou email est fourni, ainsi que userId
+    const phoneProvided = phone && typeof phone === "string" && phone.trim() !== "";
+    const emailProvided = email && typeof email === "string" && email.trim() !== "";
+    
+    if ((!phoneProvided && !emailProvided) || !userId) {
+      return res.status(400).json({ 
+        message: "Le numéro de téléphone ou l'email et l'ID utilisateur sont requis" 
+      });
+    }
+
+    // Trouver l'utilisateur
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "Utilisateur non trouvé" });
+    }
+
+    // Vérifier que le compte n'est pas déjà activé
+    if (user.isActive) {
+      return res.status(400).json({ message: "Ce compte est déjà activé" });
+    }
+
+    // Supprimer les anciens codes non vérifiés pour cet utilisateur
+    const searchCriteria = { userId, verified: false };
+    if (phoneProvided) {
+      searchCriteria.phone = phone.trim();
+    } else {
+      searchCriteria.email = email.trim().toLowerCase();
+    }
+    await VerificationCode.deleteMany(searchCriteria);
+
+    // Générer un nouveau code OTP à 6 chiffres
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Définir l'expiration (15 minutes)
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 15);
+
+    // Construire l'objet pour créer le code de vérification
+    const verificationCodeData = {
+      userId: user._id,
+      code: verificationCode,
+      expiresAt,
+      verified: false,
+      attempts: 0,
+    };
+    if (phoneProvided) {
+      verificationCodeData.phone = phone.trim();
+    }
+    if (emailProvided) {
+      verificationCodeData.email = email.trim().toLowerCase();
+    }
+
+    // Créer le code de vérification
+    await VerificationCode.create(verificationCodeData);
+
+    // Récupérer le nom complet
+    const profile = await UserProfile.findOne({ userId: user._id });
+    const fullName = user.fullName || profile?.fullName || "Utilisateur";
+
+    // Envoyer le code selon la méthode choisie
+    if (phoneProvided) {
+      // Envoyer par SMS
+      const message = `Votre code de vérification GeoFoncier est : ${verificationCode}. Ce code expire dans 15 minutes. Ne le partagez avec personne.`;
+      const smsResult = await sendSMS(phone.trim(), message);
+
+      if (!smsResult.success) {
+        console.error("❌ [RESEND_VERIFICATION] Échec envoi SMS OTP :", smsResult.error);
+        return res.status(500).json({ 
+          message: "Erreur lors de l'envoi du SMS. Veuillez réessayer plus tard." 
+        });
+      }
+
+      console.log(`✅ [RESEND_VERIFICATION] Code OTP renvoyé par SMS à ${phone.trim()}`);
+      return res.status(200).json({ 
+        message: "Code de vérification renvoyé par SMS",
+        expiresIn: 900 // 15 minutes en secondes
+      });
+    } else {
+      // Envoyer par email
+      const emailResult = await sendVerificationCode(email.trim().toLowerCase(), verificationCode, fullName);
+
+      if (!emailResult || !emailResult.success) {
+        console.error("❌ [RESEND_VERIFICATION] Échec envoi email OTP :", emailResult?.error);
+        return res.status(500).json({ 
+          message: "Erreur lors de l'envoi de l'email. Veuillez réessayer plus tard." 
+        });
+      }
+
+      console.log(`✅ [RESEND_VERIFICATION] Code OTP renvoyé par email à ${email.trim().toLowerCase()}`);
+      return res.status(200).json({ 
+        message: "Code de vérification renvoyé par email",
+        expiresIn: 900 // 15 minutes en secondes
+      });
+    }
+
+  } catch (error) {
+    console.error("❌ [RESEND_VERIFICATION] Erreur:", error);
+    res.status(500).json({ message: "Erreur serveur lors du renvoi du code de vérification" });
   }
 };

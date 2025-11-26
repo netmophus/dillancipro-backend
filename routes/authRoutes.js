@@ -48,7 +48,9 @@ const {
   registerClient,
   requestPasswordReset,
   verifyResetCode,
-  resetPassword
+  resetPassword,
+  verifyAccount,
+  resendVerificationCode
 } = require("../controllers/authController");
 
 
@@ -108,6 +110,10 @@ router.post("/login", login);
 router.post("/forgot-password", requestPasswordReset);
 router.post("/verify-reset-code", verifyResetCode);
 router.post("/reset-password", resetPassword);
+
+// ✅ Vérification de compte (OTP) (public)
+router.post("/verify-account", verifyAccount);
+router.post("/resend-verification-code", resendVerificationCode);
 
 // 🔐 Récupérer tous les utilisateurs (admin uniquement)
 router.get(

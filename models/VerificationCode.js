@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const PasswordResetCodeSchema = new mongoose.Schema({
+const VerificationCodeSchema = new mongoose.Schema({
   phone: {
     type: String,
     required: function() {
@@ -24,14 +24,25 @@ const PasswordResetCodeSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+    index: true,
+  },
   expiresAt: {
     type: Date,
     required: true,
-    index: { expireAfterSeconds: 0 }, // Suppression automatique après expiration
+    // Note: On ne met pas d'index TTL ici car on veut garder une trace des codes vérifiés
+    // Les codes non vérifiés expirés seront supprimés manuellement dans le contrôleur
   },
   verified: {
     type: Boolean,
     default: false,
+  },
+  verifiedAt: {
+    type: Date,
+    default: null,
   },
   attempts: {
     type: Number,
@@ -42,7 +53,7 @@ const PasswordResetCodeSchema = new mongoose.Schema({
 });
 
 // Validation pour s'assurer qu'au moins phone ou email est fourni
-PasswordResetCodeSchema.pre("validate", function (next) {
+VerificationCodeSchema.pre("validate", function (next) {
   const phoneValue = this.phone && typeof this.phone === "string" ? this.phone.trim() : "";
   const emailValue = this.email && typeof this.email === "string" ? this.email.trim() : "";
   
@@ -54,9 +65,11 @@ PasswordResetCodeSchema.pre("validate", function (next) {
 });
 
 // Index pour faciliter la recherche par téléphone/email et code
-PasswordResetCodeSchema.index({ phone: 1, code: 1 }, { sparse: true });
-PasswordResetCodeSchema.index({ email: 1, code: 1 }, { sparse: true });
-PasswordResetCodeSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+VerificationCodeSchema.index({ phone: 1, code: 1 }, { sparse: true });
+VerificationCodeSchema.index({ email: 1, code: 1 }, { sparse: true });
+VerificationCodeSchema.index({ userId: 1, verified: 1 });
+// Note: On ne met pas d'index TTL ici car on veut garder une trace des codes vérifiés
+// Les codes non vérifiés expirés seront supprimés manuellement dans le contrôleur si nécessaire
 
-module.exports = mongoose.model("PasswordResetCode", PasswordResetCodeSchema);
+module.exports = mongoose.model("VerificationCode", VerificationCodeSchema);
 

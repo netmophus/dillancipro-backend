@@ -157,6 +157,14 @@ const createAdminUser = async (req, res) => {
       userData.email = email.trim().toLowerCase();
     }
     
+    // Si l'admin active directement l'utilisateur, on peut le faire ici
+    // Sinon, l'utilisateur devra vérifier son compte via OTP
+    const isActive = req.body.isActive === true || req.body.isActive === "true";
+    if (isActive) {
+      userData.isActive = true;
+      userData.activatedAt = new Date(); // Garder une trace de l'activation par l'admin
+    }
+    
     const user = new User(userData);
     await user.save();
 

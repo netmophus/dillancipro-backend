@@ -72,7 +72,11 @@ const UserSchema = new mongoose.Schema({
   },
   isActive: {
     type: Boolean,
-    default: true,
+    default: false, // Par défaut, le compte est inactif jusqu'à vérification OTP
+  },
+  activatedAt: {
+    type: Date,
+    default: null, // Date d'activation du compte après vérification OTP
   },
   trackSessions: {
     type: Boolean,
