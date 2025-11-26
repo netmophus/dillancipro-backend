@@ -192,26 +192,56 @@ exports.registerClient = async (req, res) => {
       return res.status(400).json({ message: "Le nom complet est requis." });
     }
 
-    // Vérifier si le numéro est déjà utilisé
-    const existing = await User.findOne({ phone });
-    if (existing) {
-      return res.status(400).json({ message: "Ce numéro est déjà utilisé." });
+    // Vérifier qu'au moins phone ou email est fourni
+    const phoneProvided = phone && phone.trim() !== "";
+    const emailProvided = email && email.trim() !== "";
+    
+    if (!phoneProvided && !emailProvided) {
+      return res.status(400).json({ message: "Au moins un numéro de téléphone ou un email doit être fourni." });
+    }
+
+    // Vérifier si le téléphone existe déjà (si fourni)
+    if (phoneProvided) {
+      const existing = await User.findOne({ phone: phone.trim() });
+      if (existing) {
+        return res.status(400).json({ message: "Ce numéro est déjà utilisé." });
+      }
+    }
+
+    // Vérifier si l'email existe déjà (si fourni)
+    if (emailProvided) {
+      const existingEmail = await User.findOne({ email: email.trim().toLowerCase() });
+      if (existingEmail) {
+        return res.status(400).json({ message: "Cet email est déjà utilisé." });
+      }
+    }
+
+    // Construire l'objet utilisateur dynamiquement pour éviter les valeurs null
+    const userData = {
+      password,
+      role: "User",
+      fullName: fullName.trim(),
+    };
+    
+    // Ajouter phone seulement s'il est fourni
+    if (phoneProvided) {
+      userData.phone = phone.trim();
+    }
+    
+    // Ajouter email seulement s'il est fourni
+    if (emailProvided) {
+      userData.email = email.trim().toLowerCase();
     }
 
     // Créer le compte utilisateur avec fullName
-    const newUser = new User({
-      phone,
-      password,
-      role: "User", // ou "Client" si tu préfères
-      fullName: fullName.trim(), // ✅ S'assurer que fullName est dans User
-    });
+    const newUser = new User(userData);
     await newUser.save();
 
     // Créer le profil lié
     const newProfile = new UserProfile({
       userId: newUser._id,
       fullName: fullName.trim(),
-      email,
+      email: emailProvided ? email.trim().toLowerCase() : "",
     });
     await newProfile.save();
 
@@ -235,15 +265,25 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: "Le nom complet est requis." });
     }
 
-    // Vérifier si l'utilisateur existe déjà
-    const existingUser = await User.findOne({ phone });
-    if (existingUser) {
-      return res.status(400).json({ message: "Utilisateur déjà existant" });
+    // Vérifier qu'au moins phone ou email est fourni
+    const phoneProvided = phone && phone.trim() !== "";
+    const emailProvided = email && email.trim() !== "";
+    
+    if (!phoneProvided && !emailProvided) {
+      return res.status(400).json({ message: "Au moins un numéro de téléphone ou un email doit être fourni." });
     }
 
-    // Vérifier si l'email existe (si fourni)
-    if (email && email.trim() !== "") {
-      const existingEmail = await User.findOne({ email: email.trim() });
+    // Vérifier si le téléphone existe déjà (si fourni)
+    if (phoneProvided) {
+      const existingUser = await User.findOne({ phone: phone.trim() });
+      if (existingUser) {
+        return res.status(400).json({ message: "Ce numéro de téléphone est déjà utilisé" });
+      }
+    }
+
+    // Vérifier si l'email existe déjà (si fourni)
+    if (emailProvided) {
+      const existingEmail = await User.findOne({ email: email.trim().toLowerCase() });
       if (existingEmail) {
         return res.status(400).json({ message: "Cet email est déjà utilisé" });
       }
@@ -252,21 +292,32 @@ exports.register = async (req, res) => {
     // Hasher le mot de passe
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Créer l'utilisateur avec fullName obligatoire
-    const newUser = await User.create({
-      phone,
+    // Construire l'objet utilisateur dynamiquement pour éviter les valeurs null
+    const userData = {
       password: hashedPassword,
-      role,
-      fullName: fullName.trim(), // ✅ S'assurer que fullName est toujours renseigné
-      email: email && email.trim() !== "" ? email.trim() : undefined,
-    });
+      role: role || "User",
+      fullName: fullName.trim(),
+    };
+    
+    // Ajouter phone seulement s'il est fourni
+    if (phoneProvided) {
+      userData.phone = phone.trim();
+    }
+    
+    // Ajouter email seulement s'il est fourni
+    if (emailProvided) {
+      userData.email = email.trim().toLowerCase();
+    }
+
+    // Créer l'utilisateur avec fullName obligatoire
+    const newUser = await User.create(userData);
 
     // Créer un profil si fullName ou email fournis
-    if ((fullName && fullName.trim()) || (email && email.trim())) {
+    if ((fullName && fullName.trim()) || emailProvided) {
       await UserProfile.create({
         userId: newUser._id,
         fullName: fullName.trim(),
-        email: email || "",
+        email: emailProvided ? email.trim().toLowerCase() : "",
       });
     }
 
@@ -281,11 +332,34 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   try {
-    const { phone, password } = req.body;
+    const { phone, email, password, identifier } = req.body;
+    
+    // Support pour identifier (phone ou email) pour compatibilité
+    const loginPhone = phone || identifier;
+    const loginEmail = email || identifier;
 
-    const user = await User.findOne({ phone });
+    // Vérifier qu'au moins phone ou email est fourni
+    if (!loginPhone && !loginEmail) {
+      return res.status(400).json({ message: "Numéro de téléphone ou email requis" });
+    }
+
+    // Chercher l'utilisateur par phone ou email
+    let user;
+    if (loginPhone && loginPhone.trim() !== "") {
+      user = await User.findOne({ phone: loginPhone.trim() });
+    } else if (loginEmail && loginEmail.trim() !== "") {
+      user = await User.findOne({ email: loginEmail.trim().toLowerCase() });
+    }
+
     if (!user) {
       return res.status(404).json({ message: "Utilisateur non trouvé" });
+    }
+
+    // Vérifier si l'utilisateur est actif
+    if (!user.isActive) {
+      return res.status(403).json({ 
+        message: "Votre compte est inactif. Veuillez contacter l'administrateur." 
+      });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -312,7 +386,7 @@ exports.login = async (req, res) => {
       user: {
         _id: user._id,
         role: user.role,
-        phone: user.phone,
+        phone: user.phone || "",
         email: profile?.email || user.email || "",
         fullName: fullName,
       },

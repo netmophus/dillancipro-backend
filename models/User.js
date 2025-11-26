@@ -31,8 +31,11 @@ const bcrypt = require("bcryptjs"); // 👈
 const UserSchema = new mongoose.Schema({
   phone: {
     type: String,
-    required: true,
+    required: function() {
+      return !this.email || this.email.trim() === "";
+    },
     unique: true,
+    sparse: true, // Permet plusieurs documents sans phone si email est présent
   },
 
   fullName: {
@@ -45,6 +48,9 @@ const UserSchema = new mongoose.Schema({
       type: String,
       trim: true,
       lowercase: true,
+      required: function() {
+        return !this.phone || this.phone.trim() === "";
+      },
       unique: true,   // unicité seulement si présent
       sparse: true,   // autorise plusieurs docs sans email
       validate: {
@@ -81,8 +87,17 @@ const UserSchema = new mongoose.Schema({
 
 
 
+// Validation personnalisée pour s'assurer qu'au moins phone ou email est fourni
+UserSchema.pre("validate", function (next) {
+  if ((!this.phone || this.phone.trim() === "") && (!this.email || this.email.trim() === "")) {
+    this.invalidate("phone", "Au moins un numéro de téléphone ou un email doit être fourni");
+    this.invalidate("email", "Au moins un numéro de téléphone ou un email doit être fourni");
+  }
+  next();
+});
+
 UserSchema.pre("save", async function (next) {
-  // Si le champ n’a pas été modifié, on ne fait rien
+  // Si le champ n'a pas été modifié, on ne fait rien
   if (!this.isModified("password")) return next();
 
   // Si le mot de passe semble déjà haché, on ne fait rien

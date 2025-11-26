@@ -49,14 +49,8 @@ exports.createParcelle = async (req, res) => {
       ? JSON.parse(req.body.localisations)
       : [];
 
-    // ✅ RÉCUPÈRE LES URLS DE CLOUDINARY (et fallback sur req.files si besoin)
-    const images =
-      Array.isArray(req.cloudinary?.images) && req.cloudinary.images.length
-        ? req.cloudinary.images
-        : Array.isArray(req.files?.images)
-        ? req.files.images.map((f) => f.path)
-        : [];
-
+    // ✅ RÉCUPÈRE LES DOCUMENTS (spécifiques à chaque parcelle)
+    // Les images et vidéos sont maintenant au niveau de l'îlot (partagées)
     const documents =
       Array.isArray(req.cloudinary?.documents) && req.cloudinary.documents.length
         ? req.cloudinary.documents
@@ -72,10 +66,8 @@ exports.createParcelle = async (req, res) => {
       prix: prix || undefined,
       statut: statut || "avendre",
       description: description || "",
-      videos: video ? [video] : [],
       localisation: localisations[0] || {},
-      images,      // ✅ on sauve les URLs Cloudinary
-      documents,   // ✅ idem
+      documents,   // ✅ Seuls les documents sont spécifiques à chaque parcelle
       affecteeA: affecteeA || undefined,
       vendueA: vendueA || undefined,
       dateVente: dateVente || undefined,
@@ -100,7 +92,10 @@ exports.getParcelleById = async (req, res) => {
     console.log("📝 [GET_PARCELLE_BY_ID] ID demandé:", req.params.id);
     console.log("📝 [GET_PARCELLE_BY_ID] User:", req.user);
     
-    const parcelle = await Parcelle.findById(req.params.id).populate("ilot");
+    const parcelle = await Parcelle.findById(req.params.id).populate({
+      path: "ilot",
+      select: "numeroIlot images videos zone quartier"
+    });
     console.log("📝 [GET_PARCELLE_BY_ID] Parcelle trouvée:", parcelle ? "OUI" : "NON");
     
     if (!parcelle) {
@@ -108,13 +103,22 @@ exports.getParcelleById = async (req, res) => {
       return res.status(404).json({ message: "Parcelle introuvable" });
     }
     
+    // Ajouter les images et vidéos de l'îlot à la réponse de la parcelle
+    const parcelleWithIlotMedia = {
+      ...parcelle.toObject(),
+      images: parcelle.ilot?.images || [],
+      videos: parcelle.ilot?.videos || [],
+    };
+    
     console.log("✅ [GET_PARCELLE_BY_ID] Parcelle retournée:", {
       id: parcelle._id,
       numero: parcelle.numeroParcelle,
-      ilot: parcelle.ilot?.numeroIlot
+      ilot: parcelle.ilot?.numeroIlot,
+      imagesCount: parcelleWithIlotMedia.images?.length || 0,
+      videosCount: parcelleWithIlotMedia.videos?.length || 0
     });
     
-    res.status(200).json(parcelle);
+    res.status(200).json(parcelleWithIlotMedia);
   } catch (error) {
     console.error("❌ [GET_PARCELLE_BY_ID] Erreur:", error);
     res.status(500).json({ message: "Erreur serveur" });
@@ -192,6 +196,7 @@ exports.createParcellesBatchIndividual = async (req, res) => {
     const ilotToAgence = new Map(ilotsDocs.map(d => [String(d._id), d.agenceId?.toString()]));
 
     // Créer chaque parcelle avec ses données individuelles
+    // Les images et vidéos sont maintenant au niveau de l'îlot (partagées)
     const parcellesToCreate = list.map((p, index) => {
       const agenceId = ilotToAgence.get(String(p.ilot));
       if (!agenceId) throw new Error("Agence introuvable pour l'un des îlots");
@@ -204,10 +209,9 @@ exports.createParcellesBatchIndividual = async (req, res) => {
         prix: p.prix ?? undefined,
         statut: p.statut || "avendre",
         description: p.description || "",
-        videos: p.video ? [p.video] : [], // URL vidéo optionnelle
         localisation: p.localisation || {},
-        images: imagesByParcelle[index] || [], // Images spécifiques à cette parcelle
-        documents: documentsByParcelle[index] || [], // Documents spécifiques à cette parcelle
+        // Seuls les documents sont spécifiques à chaque parcelle
+        documents: documentsByParcelle[index] || [],
       };
     });
 
@@ -275,14 +279,11 @@ exports.createParcellesBatch = async (req, res) => {
         statut: p.statut || "avendre",
         description: p.description || "",
 
-        // ✅ vidéo (tableau 'videos' dans le modèle)
-        videos: p.video ? [String(p.video)] : [],
-
         // ✅ localisation (singulier dans le modèle)
         localisation: firstLoc || {},
 
-        // ✅ mêmes fichiers pour toutes (simple)
-        images,
+        // Les images et vidéos sont maintenant au niveau de l'îlot (partagées)
+        // Seuls les documents sont stockés au niveau de la parcelle
         documents,
       };
     });
@@ -501,12 +502,22 @@ exports.getAllParcelles = async (req, res) => {
 
     const parcelles = await Parcelle.find(filter)
       .populate("affecteeA")
-      .populate("ilot", "numeroIlot")
+      .populate({
+        path: "ilot",
+        select: "numeroIlot images videos zone quartier"
+      })
       .populate("agenceId", "nom telephone ville");
+    
+    // Ajouter les images et vidéos de l'îlot à chaque parcelle
+    const parcellesWithIlotMedia = parcelles.map(parcelle => ({
+      ...parcelle.toObject(),
+      images: parcelle.ilot?.images || [],
+      videos: parcelle.ilot?.videos || [],
+    }));
 
-    console.log("✅ [GET_PARCELLES] Parcelles trouvées:", parcelles.length);
+    console.log("✅ [GET_PARCELLES] Parcelles trouvées:", parcellesWithIlotMedia.length);
 
-    return res.status(200).json(parcelles);
+    return res.status(200).json(parcellesWithIlotMedia);
   } catch (err) {
     console.error("❌ [GET_PARCELLES] Erreur:", err);
     return res.status(500).json({ message: err.message });
@@ -524,15 +535,47 @@ exports.getPublicParcelles = async (req, res) => {
       statut: "avendre",
       verified: true // Seulement les parcelles vérifiées
     })
-    .populate("ilot", "numeroIlot")
+    .populate({
+      path: "ilot",
+      select: "numeroIlot images videos zone quartier",
+      populate: [
+        {
+          path: "zone",
+          select: "nom quartier",
+          populate: {
+            path: "quartier",
+            select: "nom ville",
+            populate: {
+              path: "ville",
+              select: "nom"
+            }
+          }
+        },
+        {
+          path: "quartier",
+          select: "nom ville",
+          populate: {
+            path: "ville",
+            select: "nom"
+          }
+        }
+      ]
+    })
     .populate("agenceId", "nom ville telephone")
     .sort({ createdAt: -1 })
     .limit(20); // Limiter à 20 parcelles pour la homepage
     
+    // Ajouter les images et vidéos de l'îlot à chaque parcelle
+    const parcellesWithIlotMedia = parcelles.map(parcelle => ({
+      ...parcelle.toObject(),
+      images: parcelle.ilot?.images || [],
+      videos: parcelle.ilot?.videos || [],
+    }));
+    
     res.json({
       message: "Parcelles publiques récupérées avec succès",
-      parcelles: parcelles,
-      total: parcelles.length
+      parcelles: parcellesWithIlotMedia,
+      total: parcellesWithIlotMedia.length
     });
   } catch (error) {
     return res.status(500).json({ 

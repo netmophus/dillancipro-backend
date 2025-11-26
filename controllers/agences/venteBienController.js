@@ -52,11 +52,30 @@ exports.getMesVentesClient = async (req, res) => {
  */
 exports.getMesVentesAgence = async (req, res) => {
   try {
-    if (!req.user.agenceId) {
-      return res.status(403).json({ message: "Vous devez être associé à une agence" });
+    let agenceId = req.user.agenceId;
+
+    // Si pas d'agenceId mais l'utilisateur est une Agence, essayer de trouver l'agence
+    if (!agenceId && req.user.role === "Agence") {
+      const Agence = require("../../models/Agence");
+      const agence = await Agence.findOne({ admin: req.user._id });
+      if (agence) {
+        agenceId = agence._id;
+      } else {
+        // Chercher par téléphone comme dernier recours
+        const agenceByPhone = await Agence.findOne({ telephone: req.user.phone });
+        if (agenceByPhone) {
+          agenceId = agenceByPhone._id;
+        }
+      }
     }
 
-    const ventes = await VenteBienImmobilier.find({ agenceId: req.user.agenceId })
+    if (!agenceId) {
+      return res.status(400).json({ 
+        message: "Agence non identifiée. Veuillez contacter l'administrateur pour associer votre compte à une agence." 
+      });
+    }
+
+    const ventes = await VenteBienImmobilier.find({ agenceId: agenceId })
       .populate("bienId", "titre type prix superficie localisation images statut")
       .populate("clientId", "fullName phone email")
       .populate("commercialId", "fullName phone email")

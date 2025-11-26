@@ -105,15 +105,10 @@ const createAgenceImmobiliere = async (req, res) => {
 
 const createAdminUser = async (req, res) => {
   try {
-    const { fullName, phone, password, role } = req.body;
+    const { fullName, phone, email, password, role } = req.body;
 
-    if (!["Agence", "Banque", "Ministere"].includes(role)) {
+    if (!["Agence", "Banque", "Ministere", "Admin", "Commercial", "Notaire", "User", "Client"].includes(role)) {
       return res.status(400).json({ message: "Rôle invalide" });
-    }
-
-    const existingUser = await User.findOne({ phone });
-    if (existingUser) {
-      return res.status(400).json({ message: "Ce téléphone est déjà utilisé." });
     }
 
     // Vérifier que le fullName est fourni
@@ -121,17 +116,64 @@ const createAdminUser = async (req, res) => {
       return res.status(400).json({ message: "Le nom complet est requis." });
     }
 
-    const user = new User({ 
-      fullName: fullName.trim(), // ✅ S'assurer que fullName est toujours renseigné
-      phone, 
-      password, 
-      role 
-    });
+    // Vérifier qu'au moins phone ou email est fourni
+    const phoneProvided = phone && phone.trim() !== "";
+    const emailProvided = email && email.trim() !== "";
+    
+    if (!phoneProvided && !emailProvided) {
+      return res.status(400).json({ message: "Au moins un numéro de téléphone ou un email doit être fourni." });
+    }
+
+    // Vérifier si le téléphone existe déjà (si fourni)
+    if (phoneProvided) {
+      const existingUser = await User.findOne({ phone: phone.trim() });
+      if (existingUser) {
+        return res.status(400).json({ message: "Ce téléphone est déjà utilisé." });
+      }
+    }
+
+    // Vérifier si l'email existe déjà (si fourni)
+    if (emailProvided) {
+      const existingEmail = await User.findOne({ email: email.trim().toLowerCase() });
+      if (existingEmail) {
+        return res.status(400).json({ message: "Cet email est déjà utilisé." });
+      }
+    }
+
+    // Construire l'objet utilisateur dynamiquement pour éviter les valeurs null
+    const userData = {
+      fullName: fullName.trim(),
+      password,
+      role
+    };
+    
+    // Ajouter phone seulement s'il est fourni
+    if (phoneProvided) {
+      userData.phone = phone.trim();
+    }
+    
+    // Ajouter email seulement s'il est fourni
+    if (emailProvided) {
+      userData.email = email.trim().toLowerCase();
+    }
+    
+    const user = new User(userData);
     await user.save();
 
-    console.log(`✅ Utilisateur créé: ${fullName} (${phone}) - Rôle: ${role}`);
+    // Créer un profil si email fourni
+    if (emailProvided) {
+      const UserProfile = require("../models/UserProfile");
+      await UserProfile.create({
+        userId: user._id,
+        fullName: fullName.trim(),
+        email: email.trim().toLowerCase(),
+      });
+    }
 
-    res.status(201).json({ message: "Admin créé avec succès", user });
+    const identifier = phoneProvided ? phone : email;
+    console.log(`✅ Utilisateur créé: ${fullName} (${identifier}) - Rôle: ${role}`);
+
+    res.status(201).json({ message: "Utilisateur créé avec succès", user });
   } catch (error) {
     console.error("❌ Erreur création utilisateur:", error);
     res.status(500).json({ message: "Erreur serveur", error: error.message });

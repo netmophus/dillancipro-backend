@@ -29,6 +29,16 @@ const uploadAgenceDocs = require("../middlewares/uploadAgenceDocs");
 // Routes géographiques (villes, quartiers, zones)
 const geographicRoutes = require("./admin/geographicRoutes");
 
+// Routes pour les banques
+const {
+  getAllBanques,
+  getBanquesActives,
+  getBanqueById,
+  createBanque,
+  updateBanque,
+  deleteBanque,
+} = require("../controllers/admin/banqueController");
+
 
 // Routes protégées par le rôle Admin
 router.post("/create-admin", authMiddleware, authorizeRoles("Admin"), createAdminUser);
@@ -83,5 +93,16 @@ router.put("/biens/:id/verify", authMiddleware, authorizeRoles("Admin"), verifyB
 router.put("/biens/:id/unverify", authMiddleware, authorizeRoles("Admin"), unverifyBien);
 router.get("/biens/pending", authMiddleware, authorizeRoles("Admin"), getBiensPending);
 router.put("/biens/bulk-verify", authMiddleware, authorizeRoles("Admin"), bulkVerifyBiens);
+
+// ========== ROUTES POUR LES BANQUES PARTENAIRES ==========
+// Route publique pour récupérer les banques actives (pour la homepage)
+router.get("/banques/actives", getBanquesActives);
+
+// Routes protégées pour l'administration des banques
+router.get("/banques", authMiddleware, authorizeRoles("Admin"), getAllBanques);
+router.get("/banques/:id", authMiddleware, authorizeRoles("Admin"), getBanqueById);
+router.post("/banques", authMiddleware, authorizeRoles("Admin"), createBanque);
+router.put("/banques/:id", authMiddleware, authorizeRoles("Admin"), updateBanque);
+router.delete("/banques/:id", authMiddleware, authorizeRoles("Admin"), deleteBanque);
 
 module.exports = router;

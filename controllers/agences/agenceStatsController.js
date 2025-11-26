@@ -18,10 +18,26 @@ const mongoose = require("mongoose");
  */
 exports.getAgenceStats = async (req, res) => {
   try {
-    const agenceId = req.user.agenceId; // Récupéré depuis le middleware d'auth
+    let agenceId = req.user.agenceId; // Récupéré depuis le middleware d'auth
+
+    // Si pas d'agenceId mais l'utilisateur est une Agence, essayer de trouver l'agence
+    if (!agenceId && req.user.role === "Agence") {
+      const agence = await Agence.findOne({ admin: req.user._id });
+      if (agence) {
+        agenceId = agence._id;
+      } else {
+        // Chercher par téléphone comme dernier recours
+        const agenceByPhone = await Agence.findOne({ telephone: req.user.phone });
+        if (agenceByPhone) {
+          agenceId = agenceByPhone._id;
+        }
+      }
+    }
 
     if (!agenceId) {
-      return res.status(400).json({ message: "Agence non identifiée" });
+      return res.status(400).json({ 
+        message: "Agence non identifiée. Veuillez contacter l'administrateur pour associer votre compte à une agence." 
+      });
     }
 
     // 1️⃣ STATISTIQUES DES PARCELLES
@@ -309,10 +325,26 @@ exports.getAgenceStats = async (req, res) => {
  */
 exports.getAgenceProfile = async (req, res) => {
   try {
-    const agenceId = req.user.agenceId;
+    let agenceId = req.user.agenceId;
+
+    // Si pas d'agenceId mais l'utilisateur est une Agence, essayer de trouver l'agence
+    if (!agenceId && req.user.role === "Agence") {
+      const agence = await Agence.findOne({ admin: req.user._id });
+      if (agence) {
+        agenceId = agence._id;
+      } else {
+        // Chercher par téléphone comme dernier recours
+        const agenceByPhone = await Agence.findOne({ telephone: req.user.phone });
+        if (agenceByPhone) {
+          agenceId = agenceByPhone._id;
+        }
+      }
+    }
 
     if (!agenceId) {
-      return res.status(400).json({ message: "Agence non identifiée" });
+      return res.status(400).json({ 
+        message: "Agence non identifiée. Veuillez contacter l'administrateur pour associer votre compte à une agence." 
+      });
     }
 
     const agence = await Agence.findById(agenceId).select(

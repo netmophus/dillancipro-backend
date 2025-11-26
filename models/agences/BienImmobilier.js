@@ -236,6 +236,13 @@ const BienImmobilierSchema = new mongoose.Schema(
       sparse: true,
     },
     
+    // Référence à l'IHE si le bien provient d'une IHE partagée
+    iheId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "IHE",
+      index: true,
+    },
+    
     // Système de vérification par l'admin général
     verified: {
       type: Boolean,

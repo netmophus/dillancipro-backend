@@ -65,9 +65,23 @@ const authMiddleware = async (req, res, next) => {
 
     // Si l'utilisateur est une Agence ou un Admin, récupérer son agenceId
     if (user.role === "Agence" || user.role === "Admin") {
-      const agence = await Agence.findOne({ admin: user._id });
-      if (agence) {
-        req.user.agenceId = agence._id;
+      // D'abord vérifier si l'utilisateur a déjà un agenceId dans son profil
+      if (user.agenceId) {
+        req.user.agenceId = user.agenceId;
+      } else {
+        // Sinon, chercher l'agence par admin
+        const agence = await Agence.findOne({ admin: user._id });
+        if (agence) {
+          req.user.agenceId = agence._id;
+          // Optionnellement, mettre à jour le profil utilisateur pour éviter les recherches futures
+          // await User.findByIdAndUpdate(user._id, { agenceId: agence._id });
+        } else {
+          // Dernière tentative : chercher par téléphone (si le téléphone de l'agence correspond)
+          const agenceByPhone = await Agence.findOne({ telephone: user.phone });
+          if (agenceByPhone) {
+            req.user.agenceId = agenceByPhone._id;
+          }
+        }
       }
     }
     

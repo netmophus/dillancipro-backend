@@ -33,6 +33,7 @@ const notaireRoutes = require("./routes/admin/notaireRoutes");
 const paiementPatrimoineRoutes = require("./routes/paiementPatrimoineRoutes");
 const ventePatrimoineRoutes = require("./routes/ventePatrimoineRoutes");
 const { uploadGeneric } = require("./middlewares/uploadGeneric");
+const uploadIHEMedia = require("./middlewares/uploadIHEMedia");
 
 dotenv.config();
 
@@ -53,8 +54,8 @@ const allowedOrigins = [
   "http://127.0.0.1:3000",
   "http://localhost:5173",
   "http://127.0.0.1:5173",
-  "http://192.168.0.100:3000",
-  "http://192.168.0.100:5173",
+  "http://192.168.80.198:3000",
+   "http://192.168.0.100:3000",
   "https://dillanciprofrontend-94260dd67ad1.herokuapp.com",
 ];
 
@@ -155,6 +156,14 @@ app.use("/api/client", clientDashboardRoutes);
 
 app.use("/api/client/patrimoine", patrimoineRoutes);
 
+// Routes IHE (Immobilisations Hors Exploitation) pour les banques
+const banqueIHERoutes = require("./routes/banque/banqueIHERoutes");
+app.use("/api/banque/ihe", banqueIHERoutes);
+
+// Routes demandes de crédit hypothécaire pour les banques
+const demandeCreditHypothecaireRoutes = require("./routes/banque/demandeCreditHypothecaireRoutes");
+app.use("/api/banque/demandes-credit-hypothecaire", demandeCreditHypothecaireRoutes);
+
 // Routes tarification (admin)
 app.use("/api/admin/tarifs", tarifRoutes);
 
@@ -168,6 +177,10 @@ app.use("/api/admin/notaires", notaireRoutes);
 // Routes notaire
 const notaireVenteRoutes = require("./routes/notaire/venteRoutes");
 app.use("/api/notaire/ventes", notaireVenteRoutes);
+
+// Routes demandes de crédit hypothécaire pour les notaires
+const demandeCreditHypothecaireNotaireRoutes = require("./routes/notaire/demandeCreditHypothecaireRoutes");
+app.use("/api/notaire/demandes-credit-hypothecaire", demandeCreditHypothecaireNotaireRoutes);
 
 // Routes paiements patrimoine
 app.use("/api/patrimoine/paiements", paiementPatrimoineRoutes);
@@ -183,7 +196,20 @@ app.get("/api/public/patrimoine", getPublicPatrimoine);
 const { getPublicParcelles } = require("./controllers/agences/parcelleController");
 app.get("/api/public/parcelles", getPublicParcelles);
 
+// Routes publiques pour la recherche de parcelles avec filtres
+const parcellePublicRoutes = require("./routes/public/parcellePublicRoutes");
+app.use("/api/public/parcelles", parcellePublicRoutes);
+
+// Routes publiques pour la recherche de locations avec filtres
+const locationPublicRoutes = require("./routes/public/locationPublicRoutes");
+app.use("/api/public/locations", locationPublicRoutes);
+
+// Routes publiques pour les biens immobiliers
+const bienPublicRoutes = require("./routes/public/bienPublicRoutes");
+app.use("/api/public/biens", bienPublicRoutes);
+
 // Route d'upload générique
+// Route générique d'upload (pour compatibilité)
 app.post("/api/upload", uploadGeneric[0], uploadGeneric[1], (req, res) => {
   if (req.cloudinary) {
     res.status(200).json({
@@ -193,6 +219,39 @@ app.post("/api/upload", uploadGeneric[0], uploadGeneric[1], (req, res) => {
     });
   } else {
     res.status(400).json({ message: "Aucun fichier uploadé" });
+  }
+});
+
+// Route spécifique pour uploader les médias IHE (photos et documents)
+// POST /api/banque/ihe/upload-media
+// Body: { file: File, mediaType: 'photo' | 'document', iheId?: string }
+// Requiert authentification
+const authMiddleware = require("./middlewares/authMiddleware");
+app.post("/api/banque/ihe/upload-media", authMiddleware, uploadIHEMedia[0], uploadIHEMedia[1], (req, res) => {
+  try {
+    if (!req.cloudinary || !req.cloudinary.iheMedia) {
+      return res.status(400).json({
+        message: "Aucun fichier uploadé",
+      });
+    }
+
+    const { iheMedia } = req.cloudinary;
+
+    res.status(200).json({
+      message: "✅ Fichier uploadé avec succès",
+      url: iheMedia.url,
+      public_id: iheMedia.public_id,
+      resource_type: iheMedia.resource_type,
+      folder: iheMedia.folder,
+      originalName: iheMedia.originalName,
+      size: iheMedia.size,
+    });
+  } catch (error) {
+    console.error("❌ Erreur route upload-media:", error);
+    res.status(500).json({
+      message: "Erreur serveur",
+      error: error.message,
+    });
   }
 });
 
@@ -222,6 +281,11 @@ mongoose
     const { checkExpiration, relanceAvantExpiration } = require("./cron/checkExpiration");
     checkExpiration();
     relanceAvantExpiration();
+    
+    // Démarrer les cron jobs pour les alertes réglementaires IHE
+    const { checkIHEAlertesReglementaires, rapportHebdomadaireIHE } = require("./cron/checkIHEAlertes");
+    checkIHEAlertesReglementaires();
+    rapportHebdomadaireIHE();
     
     app.listen(PORT, () => {
       console.log(`🚀 Serveur lancé sur le port ${PORT}`);

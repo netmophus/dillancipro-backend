@@ -8,11 +8,11 @@ const { authorizeRoles } = require("../../middlewares/roleMiddleware");
 // Route publique pour récupérer les notaires actifs (accessible à tous)
 router.get("/public", getNotairesActifsPublic);
 
-// Route pour récupérer les notaires actifs (accessible aux commerciaux et agences)
+// Route pour récupérer les notaires actifs (accessible aux commerciaux, agences, banques et admin)
 router.get(
   "/actifs",
   authMiddleware,
-  authorizeRoles("Commercial", "Agence", "Admin"),
+  authorizeRoles("Commercial", "Agence", "Admin", "Banque"),
   getNotairesActifs
 );
 

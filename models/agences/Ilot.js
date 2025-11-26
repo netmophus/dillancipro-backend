@@ -25,10 +25,14 @@ const IlotSchema = new mongoose.Schema(
     agenceId: { type: mongoose.Schema.Types.ObjectId, ref: "Agence", required: true, index: true },
     surfaceTotale: { type: Number, default: 0 },
     affecteA: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // 👈 commercial assigné
+    // Photos et vidéos partagées par toutes les parcelles de cet îlot
+    images: [{ type: String }],
+    videos: [{ type: String }],
   },
   { timestamps: true }
 );
 
-IlotSchema.index({ zone: 1, numeroIlot: 1 }, { unique: true });
+// Index unique : zone + numeroIlot + agenceId (permet le même numéro dans différentes agences)
+IlotSchema.index({ zone: 1, numeroIlot: 1, agenceId: 1 }, { unique: true });
 
 module.exports = mongoose.model("Ilot", IlotSchema);

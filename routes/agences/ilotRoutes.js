@@ -10,9 +10,10 @@ const {
   getAllIlots,
   getParcellesByIlot,
 } = require("../../controllers/agences/ilotController");
+const uploadIlots = require("../../middlewares/uploadIlots");
 
 // ➕ Créer un îlot
-router.post("/", authMiddleware, authorizeRoles("Agence"), createIlot);
+router.post("/", authMiddleware, authorizeRoles("Agence"), uploadIlots, createIlot);
 
 // ✏️ Modifier un îlot
 router.put("/:id", authMiddleware, authorizeRoles("Agence"), updateIlot);

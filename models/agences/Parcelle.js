@@ -40,8 +40,8 @@ const ParcelleSchema = new mongoose.Schema(
     localisation: { lat: Number, lng: Number },
    
     description: String,
-    images: [String],
-    videos: [String],
+    // Les images et vidéos sont maintenant stockées au niveau de l'îlot (partagées)
+    // Seuls les documents sont spécifiques à chaque parcelle
     documents: [String],
     
     // Système de vérification par l'admin général
