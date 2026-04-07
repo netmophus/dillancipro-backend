@@ -328,7 +328,33 @@ exports.register = async (req, res) => {
     if (phoneProvided) {
       const existingUser = await User.findOne({ phone: phone.trim() });
       if (existingUser) {
-        return res.status(400).json({ message: "Ce numéro de téléphone est déjà utilisé" });
+        // Compte non vérifié → renvoyer un nouveau code OTP
+        if (!existingUser.isActive) {
+          const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+          const expiresAt = new Date();
+          expiresAt.setMinutes(expiresAt.getMinutes() + 15);
+
+          await VerificationCode.deleteMany({ userId: existingUser._id });
+          await VerificationCode.create({
+            userId: existingUser._id,
+            code: verificationCode,
+            expiresAt,
+            verified: false,
+            attempts: 0,
+            phone: phone.trim(),
+          });
+
+          const message = `MIZNAS Patrimoine : votre code de verification est ${verificationCode}. Valable 15 min.`;
+          await sendSMS(phone.trim(), message);
+
+          return res.status(201).json({
+            message: "Un nouveau code de vérification vous a été envoyé par SMS.",
+            userId: existingUser._id,
+            requiresVerification: true,
+            method: "SMS",
+          });
+        }
+        return res.status(400).json({ message: "Ce numéro est déjà utilisé." });
       }
     }
 
@@ -336,7 +362,31 @@ exports.register = async (req, res) => {
     if (emailProvided) {
       const existingEmail = await User.findOne({ email: email.trim().toLowerCase() });
       if (existingEmail) {
-        return res.status(400).json({ message: "Cet email est déjà utilisé" });
+        if (!existingEmail.isActive) {
+          const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+          const expiresAt = new Date();
+          expiresAt.setMinutes(expiresAt.getMinutes() + 15);
+
+          await VerificationCode.deleteMany({ userId: existingEmail._id });
+          await VerificationCode.create({
+            userId: existingEmail._id,
+            code: verificationCode,
+            expiresAt,
+            verified: false,
+            attempts: 0,
+            email: email.trim().toLowerCase(),
+          });
+
+          await sendVerificationCode(email.trim().toLowerCase(), verificationCode, existingEmail.fullName || fullName.trim());
+
+          return res.status(201).json({
+            message: "Un nouveau code de vérification vous a été envoyé par email.",
+            userId: existingEmail._id,
+            requiresVerification: true,
+            method: "email",
+          });
+        }
+        return res.status(400).json({ message: "Cet email est déjà utilisé." });
       }
     }
 
