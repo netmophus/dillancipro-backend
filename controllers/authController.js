@@ -275,7 +275,7 @@ exports.registerClient = async (req, res) => {
     // Envoyer le code selon la méthode choisie
     if (phoneProvided) {
       // Envoyer par SMS
-      const message = `MIZNAS: votre code est ${verificationCode}. Valable 15 min. Ne pas partager.`;
+      const message = `MIZNAS Patrimoine : votre code de verification est ${verificationCode}. Valable 15 min.`;
       const smsResult = await sendSMS(phone.trim(), message);
 
       if (!smsResult.success) {
@@ -401,7 +401,7 @@ exports.register = async (req, res) => {
     // Envoyer le code selon la méthode choisie
     if (phoneProvided) {
       // Envoyer par SMS
-      const message = `MIZNAS: votre code est ${verificationCode}. Valable 15 min. Ne pas partager.`;
+      const message = `MIZNAS Patrimoine : votre code de verification est ${verificationCode}. Valable 15 min.`;
       const smsResult = await sendSMS(phone.trim(), message);
 
       if (!smsResult.success) {
@@ -983,7 +983,7 @@ exports.resendVerificationCode = async (req, res) => {
     // Envoyer le code selon la méthode choisie
     if (phoneProvided) {
       // Envoyer par SMS
-      const message = `MIZNAS: votre code est ${verificationCode}. Valable 15 min. Ne pas partager.`;
+      const message = `MIZNAS Patrimoine : votre code de verification est ${verificationCode}. Valable 15 min.`;
       const smsResult = await sendSMS(phone.trim(), message);
 
       if (!smsResult.success) {
