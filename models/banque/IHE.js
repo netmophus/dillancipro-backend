@@ -37,7 +37,41 @@ const IHESchema = new mongoose.Schema(
       index: true,
     },
 
+    // Localisation et référence
+    pays: {
+      type: String,
+      trim: true,
+    },
+    ville: {
+      type: String,
+      trim: true,
+    },
+    quartier: {
+      type: String,
+      trim: true,
+    },
+    referenceTitreFoncier: {
+      type: String,
+      trim: true,
+      index: true,
+    },
+
+    // Informations essentielles
+    dateEntreeIHE: {
+      type: Date,
+      index: true,
+    },
+    valeurComptableBruteEntree: {
+      type: Number,
+      min: 0,
+    },
+
     // Valeurs financières
+    // Origine de l'IHE
+    origineIHE: {
+      type: String,
+      enum: ["adjudication", "dation", "achat", "autre", ""],
+    },
     // Valeur d'adjudication ou de dation en paiement
     valeurAdjudication: {
       type: Number,
@@ -73,6 +107,43 @@ const IHESchema = new mongoose.Schema(
     },
 
     // Suivi réglementaire et cession
+    // Type réglementaire d'IHE
+    typeReglementaireIHE: {
+      type: String,
+      enum: ["reprise_garantie", "autre", ""],
+    },
+    // Date d'entrée en IHE (réglementaire) pour calcul 24 mois
+    dateEntreeIHEReglementaire: {
+      type: Date,
+      index: true,
+    },
+    // Date limite réglementaire de cession (24 mois pour reprise de garantie)
+    dateLimiteReglementaire: {
+      type: Date,
+      index: true,
+    },
+    // Prorogation Commission bancaire
+    prorogationCommissionBancaire: {
+      type: Boolean,
+      default: false,
+    },
+    dateDecisionProrogation: {
+      type: Date,
+    },
+    nouvelleDateLimiteCession: {
+      type: Date,
+    },
+    // Inclusion dans le plafond 15%
+    inclusDansPlafond15: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
+    motifExclusionPlafond: {
+      type: String,
+      enum: ["reprise_2_ans", "logement_personnel", "autre", ""],
+    },
+    // Anciens champs (pour compatibilité)
     // Date à laquelle le bien a été reclassé en IHE
     dateReclassement: {
       type: Date,
@@ -302,6 +373,21 @@ const IHESchema = new mongoose.Schema(
       },
     ],
 
+    // Informations complémentaires
+    referenceClientInterne: {
+      type: String,
+      trim: true,
+      index: true,
+    },
+    referencePretOrigine: {
+      type: String,
+      trim: true,
+    },
+    referenceGarantie: {
+      type: String,
+      trim: true,
+    },
+
     // Métadonnées
     notes: {
       type: String,
@@ -341,7 +427,7 @@ IHESchema.pre("save", async function (next) {
 
 // Calculer automatiquement la date limite de cession et le statut d'alerte
 IHESchema.pre("save", function (next) {
-  // Calculer dateLimiteCession si dateReclassement et dureeMaximaleDetention sont définis
+  // Calculer dateLimiteCession si dateReclassement et dureeMaximaleDetention sont définis (ancien système)
   if (this.dateReclassement && this.dureeMaximaleDetention) {
     const dateReclassement = new Date(this.dateReclassement);
     const dateLimite = new Date(dateReclassement);
@@ -349,10 +435,26 @@ IHESchema.pre("save", function (next) {
     this.dateLimiteCession = dateLimite;
   }
 
-  // Calculer le statut d'alerte réglementaire si dateLimiteCession existe
-  if (this.dateLimiteCession) {
+  // Calculer automatiquement dateLimiteReglementaire (24 mois BCEAO) si typeReglementaireIHE = "reprise_garantie"
+  // et si elle n'est pas déjà définie ou si les champs nécessaires ont changé
+  if (this.typeReglementaireIHE === "reprise_garantie" && !this.dateLimiteReglementaire) {
+    const dateEntree = this.dateEntreeIHEReglementaire || this.dateEntreeIHE;
+    if (dateEntree) {
+      const dateEntreeObj = new Date(dateEntree);
+      const dateLimiteReglementaire = new Date(dateEntreeObj);
+      dateLimiteReglementaire.setMonth(dateLimiteReglementaire.getMonth() + 24); // +24 mois (2 ans BCEAO)
+      this.dateLimiteReglementaire = dateLimiteReglementaire;
+    }
+  }
+
+  // PRIORITÉ : Calculer le statut d'alerte réglementaire basé sur dateLimiteReglementaire (24 mois BCEAO)
+  // Si dateLimiteReglementaire existe, l'utiliser pour les alertes réglementaires
+  // Sinon, utiliser dateLimiteCession (ancien système)
+  const dateLimitePourAlertes = this.dateLimiteReglementaire || this.dateLimiteCession;
+  
+  if (dateLimitePourAlertes) {
     const maintenant = new Date();
-    const dateLimite = new Date(this.dateLimiteCession);
+    const dateLimite = new Date(dateLimitePourAlertes);
     const diffMois = Math.floor(
       (dateLimite - maintenant) / (1000 * 60 * 60 * 24 * 30)
     );
@@ -366,8 +468,11 @@ IHESchema.pre("save", function (next) {
     } else if (diffMois <= 6) {
       // Entre 3 et 6 mois avant la date limite
       this.statutAlerteReglementaire = "attention";
+    } else if (diffMois <= 12) {
+      // Entre 6 et 12 mois avant la date limite (alerte à 1 an)
+      this.statutAlerteReglementaire = "preavis_1_an";
     } else {
-      // Plus de 6 mois avant la date limite
+      // Plus de 12 mois avant la date limite
       this.statutAlerteReglementaire = "ok";
     }
 

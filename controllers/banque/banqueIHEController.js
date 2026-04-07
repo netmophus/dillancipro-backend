@@ -15,23 +15,46 @@ exports.createIHE = async (req, res) => {
       titre,
       description,
       nomClient,
-      valeurAdjudication,
-      valeurDation,
-      valeurNetteComptable,
-      valeurComptable,
-      valeurAcquisition,
-      valeurCession,
-      dateAcquisition,
+      // Localisation et référence
+      pays,
+      ville,
+      quartier,
+      referenceTitreFoncier,
+      // Informations essentielles
       superficie,
       uniteSuperficie,
+      dateEntreeIHE,
+      valeurComptableBruteEntree,
+      // Informations financières
+      origineIHE,
+      valeurAdjudication,
+      valeurDation,
+      valeurAcquisition,
+      dateAcquisition,
+      valeurNetteComptable,
+      valeurCession,
+      // Champs réglementaires
+      typeReglementaireIHE,
+      dateEntreeIHEReglementaire,
+      dateLimiteReglementaire,
+      prorogationCommissionBancaire,
+      dateDecisionProrogation,
+      nouvelleDateLimiteCession,
+      inclusDansPlafond15,
+      motifExclusionPlafond,
+      planCession,
+      // Informations complémentaires
+      referenceClientInterne,
+      referencePretOrigine,
+      referenceGarantie,
+      // Anciens champs (pour compatibilité)
+      valeurComptable, // Mapper depuis valeurComptableBruteEntree si présent
+      dateReclassement,
+      dureeMaximaleDetention,
       localisation,
       caracteristiques,
       notes,
       commentaires,
-      // Champs réglementaires
-      dateReclassement,
-      dureeMaximaleDetention,
-      planCession,
     } = req.body;
 
     // Vérifier que l'utilisateur est une banque
@@ -39,29 +62,73 @@ exports.createIHE = async (req, res) => {
       return res.status(403).json({ message: "Accès réservé aux banques" });
     }
 
+    // Mapper valeurComptableBruteEntree vers valeurComptable si nécessaire
+    const valeurComptableFinale = valeurComptableBruteEntree || valeurComptable;
+
     // Créer l'IHE avec isolation par banque
     const nouvelleIHE = new IHE({
       type,
       titre,
       description,
       nomClient,
-      valeurAdjudication,
-      valeurDation,
-      valeurNetteComptable,
-      valeurComptable,
-      valeurAcquisition,
-      valeurCession,
-      dateAcquisition: dateAcquisition ? new Date(dateAcquisition) : undefined,
+      // Localisation et référence
+      pays,
+      ville,
+      quartier,
+      referenceTitreFoncier,
+      // Informations essentielles
       superficie,
       uniteSuperficie: uniteSuperficie || "m²",
+      dateEntreeIHE: dateEntreeIHE ? new Date(dateEntreeIHE) : undefined,
+      valeurComptable: valeurComptableFinale, // Utiliser valeurComptableBruteEntree ou valeurComptable
+      valeurComptableBruteEntree: valeurComptableBruteEntree,
+      // Informations financières
+      origineIHE,
+      valeurAdjudication,
+      valeurDation,
+      valeurAcquisition,
+      dateAcquisition: dateAcquisition ? new Date(dateAcquisition) : undefined,
+      valeurNetteComptable,
+      valeurCession,
+      // Champs réglementaires
+      typeReglementaireIHE,
+      dateEntreeIHEReglementaire: dateEntreeIHEReglementaire ? new Date(dateEntreeIHEReglementaire) : undefined,
+      // Calculer automatiquement dateLimiteReglementaire si typeReglementaireIHE = "reprise_garantie" (24 mois BCEAO)
+      dateLimiteReglementaire: (() => {
+        // Si dateLimiteReglementaire est fournie manuellement, l'utiliser
+        if (dateLimiteReglementaire) {
+          return new Date(dateLimiteReglementaire);
+        }
+        // Sinon, calculer automatiquement pour les immeubles repris en garantie
+        if (typeReglementaireIHE === "reprise_garantie") {
+          const dateEntree = dateEntreeIHEReglementaire 
+            ? new Date(dateEntreeIHEReglementaire) 
+            : (dateEntreeIHE ? new Date(dateEntreeIHE) : null);
+          if (dateEntree) {
+            const dateLimite = new Date(dateEntree);
+            dateLimite.setMonth(dateLimite.getMonth() + 24); // +24 mois (2 ans BCEAO)
+            return dateLimite;
+          }
+        }
+        return undefined;
+      })(),
+      prorogationCommissionBancaire: prorogationCommissionBancaire || false,
+      dateDecisionProrogation: dateDecisionProrogation ? new Date(dateDecisionProrogation) : undefined,
+      nouvelleDateLimiteCession: nouvelleDateLimiteCession ? new Date(nouvelleDateLimiteCession) : undefined,
+      inclusDansPlafond15: inclusDansPlafond15 !== undefined ? inclusDansPlafond15 : true,
+      motifExclusionPlafond,
+      planCession,
+      // Informations complémentaires
+      referenceClientInterne,
+      referencePretOrigine,
+      referenceGarantie,
+      // Anciens champs (pour compatibilité)
+      dateReclassement: dateReclassement ? new Date(dateReclassement) : undefined,
+      dureeMaximaleDetention: dureeMaximaleDetention || 60, // 5 ans par défaut
       localisation,
       caracteristiques,
       notes,
       commentaires,
-      // Champs réglementaires
-      dateReclassement: dateReclassement ? new Date(dateReclassement) : undefined,
-      dureeMaximaleDetention: dureeMaximaleDetention || 60, // 5 ans par défaut
-      planCession,
       banqueId: req.user._id, // Isolation par banque
       saisiPar: req.user._id,
       statut: "en_attente_validation",
@@ -244,9 +311,26 @@ exports.updateIHE = async (req, res) => {
     const champsProteges = ["banqueId", "saisiPar", "_id", "createdAt", "updatedAt"];
     Object.keys(updateData).forEach((key) => {
       if (updateData[key] !== undefined && !champsProteges.includes(key)) {
-        ihe[key] = updateData[key];
+        // Convertir les dates en objets Date
+        if (key.includes("date") && typeof updateData[key] === "string") {
+          ihe[key] = new Date(updateData[key]);
+        } else {
+          ihe[key] = updateData[key];
+        }
       }
     });
+
+    // Calculer automatiquement dateLimiteReglementaire si typeReglementaireIHE = "reprise_garantie"
+    // et si elle n'est pas déjà définie ou si les champs nécessaires ont changé
+    if (ihe.typeReglementaireIHE === "reprise_garantie" && !ihe.dateLimiteReglementaire) {
+      const dateEntree = ihe.dateEntreeIHEReglementaire || ihe.dateEntreeIHE;
+      if (dateEntree) {
+        const dateEntreeObj = new Date(dateEntree);
+        const dateLimiteReglementaire = new Date(dateEntreeObj);
+        dateLimiteReglementaire.setMonth(dateLimiteReglementaire.getMonth() + 24); // +24 mois (2 ans BCEAO)
+        ihe.dateLimiteReglementaire = dateLimiteReglementaire;
+      }
+    }
 
     // Si l'IHE était validée et qu'on la modifie, remettre en attente de validation
     if (doitRevalider) {
@@ -594,9 +678,13 @@ exports.getIHEsARisque = async (req, res) => {
     const { niveauAlerte } = req.query; // "attention", "urgent", "depasse", ou tous si non spécifié
 
     // Construire le filtre
+    // PRIORITÉ : Utiliser dateLimiteReglementaire (24 mois BCEAO) si disponible
     const filter = {
       banqueId,
-      dateLimiteCession: { $exists: true, $ne: null },
+      $or: [
+        { dateLimiteReglementaire: { $exists: true, $ne: null } },
+        { dateLimiteCession: { $exists: true, $ne: null } }
+      ],
       statut: { $nin: ["vendu", "rejete"] }, // Exclure les IHE vendues ou rejetées
     };
 
@@ -605,25 +693,28 @@ exports.getIHEsARisque = async (req, res) => {
       filter.statutAlerteReglementaire = niveauAlerte;
     } else {
       // Par défaut, récupérer toutes les IHE à risque (pas "ok")
-      filter.statutAlerteReglementaire = { $in: ["attention", "urgent", "depasse"] };
+      filter.statutAlerteReglementaire = { $in: ["preavis_1_an", "attention", "urgent", "depasse"] };
     }
 
     const ihesARisque = await IHE.find(filter)
       .populate("saisiPar", "fullName phone")
       .populate("validePar", "fullName phone")
-      .sort({ dateLimiteCession: 1 }) // Trier par date limite croissante (les plus urgentes en premier)
+      .sort({ dateLimiteReglementaire: 1, dateLimiteCession: 1 }) // Trier par date limite réglementaire en priorité
       .lean();
 
     // Calculer les jours restants pour chaque IHE
     const maintenant = new Date();
     const ihesAvecDetails = ihesARisque.map((ihe) => {
-      const dateLimite = new Date(ihe.dateLimiteCession);
+      // PRIORITÉ : Utiliser dateLimiteReglementaire (24 mois BCEAO) si disponible
+      const dateLimitePourAlertes = ihe.dateLimiteReglementaire || ihe.dateLimiteCession;
+      const dateLimite = new Date(dateLimitePourAlertes);
       const diffMs = dateLimite - maintenant;
       const joursRestants = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
       const moisRestants = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30));
 
       return {
         ...ihe,
+        dateLimiteUtilisee: ihe.dateLimiteReglementaire ? "réglementaire (24 mois)" : "cession (60 mois)",
         joursRestants,
         moisRestants,
         estDepasse: joursRestants < 0,
@@ -636,6 +727,7 @@ exports.getIHEsARisque = async (req, res) => {
       depasse: ihesAvecDetails.filter((i) => i.estDepasse).length,
       urgent: ihesAvecDetails.filter((i) => i.statutAlerteReglementaire === "urgent" && !i.estDepasse).length,
       attention: ihesAvecDetails.filter((i) => i.statutAlerteReglementaire === "attention").length,
+      preavis_1_an: ihesAvecDetails.filter((i) => i.statutAlerteReglementaire === "preavis_1_an").length,
     };
 
     res.status(200).json({

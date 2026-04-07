@@ -14,14 +14,18 @@ const checkIHEAlertesReglementaires = () => {
       
       const maintenant = new Date();
       
-      // Récupérer toutes les IHE avec une date limite de cession
+      // Récupérer toutes les IHE avec une date limite réglementaire OU date limite de cession
+      // PRIORITÉ : Utiliser dateLimiteReglementaire (24 mois BCEAO) si disponible
       const ihes = await IHE.find({
-        dateLimiteCession: { $exists: true, $ne: null },
+        $or: [
+          { dateLimiteReglementaire: { $exists: true, $ne: null } },
+          { dateLimiteCession: { $exists: true, $ne: null } }
+        ],
         statut: { $nin: ["vendu", "rejete"] }, // Exclure les IHE vendues ou rejetées
       }).populate('banqueId', 'fullName email phone');
       
       if (ihes.length === 0) {
-        console.log('✅ Aucune IHE avec date limite de cession');
+        console.log('✅ Aucune IHE avec date limite de cession réglementaire');
         return;
       }
       
@@ -29,9 +33,18 @@ const checkIHEAlertesReglementaires = () => {
       let depasse = 0;
       let urgent = 0;
       let attention = 0;
+      let preavis_1_an = 0;
       
       for (const ihe of ihes) {
-        const dateLimite = new Date(ihe.dateLimiteCession);
+        // PRIORITÉ : Utiliser dateLimiteReglementaire (24 mois BCEAO) si disponible
+        // Sinon, utiliser dateLimiteCession (ancien système)
+        const dateLimitePourAlertes = ihe.dateLimiteReglementaire || ihe.dateLimiteCession;
+        
+        if (!dateLimitePourAlertes) {
+          continue; // Passer cette IHE si aucune date limite n'est définie
+        }
+        
+        const dateLimite = new Date(dateLimitePourAlertes);
         const diffMs = dateLimite - maintenant;
         const diffMois = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30));
         
@@ -49,8 +62,12 @@ const checkIHEAlertesReglementaires = () => {
           // Entre 3 et 6 mois avant la date limite
           nouveauStatut = "attention";
           attention++;
+        } else if (diffMois <= 12) {
+          // Entre 6 et 12 mois avant la date limite (alerte à 1 an)
+          nouveauStatut = "preavis_1_an";
+          preavis_1_an++;
         } else {
-          // Plus de 6 mois avant la date limite
+          // Plus de 12 mois avant la date limite
           nouveauStatut = "ok";
         }
         
@@ -63,7 +80,8 @@ const checkIHEAlertesReglementaires = () => {
           
           // Log pour les cas critiques
           if (nouveauStatut === "depasse" || nouveauStatut === "urgent") {
-            console.log(`⚠️ IHE ${ihe.reference} (${ihe.titre}) - Statut: ${nouveauStatut} - Date limite: ${dateLimite.toLocaleDateString()}`);
+            const typeDate = ihe.dateLimiteReglementaire ? "réglementaire (24 mois)" : "cession (60 mois)";
+            console.log(`⚠️ IHE ${ihe.reference} (${ihe.titre}) - Statut: ${nouveauStatut} - Date limite ${typeDate}: ${dateLimite.toLocaleDateString()}`);
           }
         }
       }
@@ -72,6 +90,8 @@ const checkIHEAlertesReglementaires = () => {
       console.log(`   - Dépassées: ${depasse}`);
       console.log(`   - Urgentes: ${urgent}`);
       console.log(`   - Attention: ${attention}`);
+      console.log(`   - Préavis 1 an: ${preavis_1_an}`);
+      console.log(`   - Préavis 1 an: ${preavis_1_an}`);
       
       // TODO: Envoyer notifications aux managers banque pour les IHE critiques
       // await envoyerNotificationsAlertes(ihesCritiques);
@@ -97,18 +117,33 @@ const rapportHebdomadaireIHE = () => {
       const dans3mois = new Date();
       dans3mois.setMonth(dans3mois.getMonth() + 3);
       
-      // IHE dépassant la date limite
+      // IHE dépassant la date limite réglementaire (24 mois) OU date limite de cession (60 mois)
       const ihesDepassees = await IHE.find({
-        dateLimiteCession: { $lt: maintenant },
+        $or: [
+          { dateLimiteReglementaire: { $lt: maintenant } },
+          { dateLimiteCession: { $lt: maintenant } }
+        ],
         statut: { $nin: ["vendu", "rejete"] },
       }).populate('banqueId', 'fullName').populate('saisiPar', 'fullName');
       
       // IHE approchant la date limite (moins de 3 mois)
+      // PRIORITÉ : Utiliser dateLimiteReglementaire si disponible
       const ihesUrgentes = await IHE.find({
-        dateLimiteCession: { 
-          $gte: maintenant, 
-          $lte: dans3mois 
-        },
+        $or: [
+          {
+            dateLimiteReglementaire: { 
+              $gte: maintenant, 
+              $lte: dans3mois 
+            }
+          },
+          {
+            dateLimiteCession: { 
+              $gte: maintenant, 
+              $lte: dans3mois 
+            },
+            dateLimiteReglementaire: { $exists: false } // Utiliser dateLimiteCession seulement si dateLimiteReglementaire n'existe pas
+          }
+        ],
         statut: { $nin: ["vendu", "rejete"] },
       }).populate('banqueId', 'fullName').populate('saisiPar', 'fullName');
       

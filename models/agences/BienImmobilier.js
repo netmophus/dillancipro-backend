@@ -21,6 +21,23 @@ const BienImmobilierSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Situation géographique du terrain (optionnel)
+    situationGeographique: {
+      type: String,
+      trim: true,
+    },
+    // Description physique du bien (optionnel)
+    descriptionPhysique: {
+      type: String,
+      trim: true,
+    },
+    // Atouts majeurs du bien (optionnel, tableau de chaînes)
+    atoutsMajeurs: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
     prix: {
       type: Number,
       required: true,

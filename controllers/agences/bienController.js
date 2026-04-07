@@ -15,6 +15,9 @@ exports.createBien = async (req, res) => {
       type,
       titre,
       description,
+      situationGeographique,
+      descriptionPhysique,
+      atoutsMajeurs,
       prix,
       superficie,
       statut,
@@ -40,22 +43,24 @@ exports.createBien = async (req, res) => {
       ? req.cloudinary.documents
       : [];
     
-    // Parser les URLs vidéos (Vimeo, YouTube, etc.)
+    // Parser les URLs vidéos (Vimeo, YouTube, etc.) - Optionnel
     let videosData = [];
-    if (videos) {
-      videosData = Array.isArray(videos) ? videos : [videos];
-      videosData = videosData.filter(v => v && v.trim() !== "");
-      
-      // Validation: au moins 1 vidéo requise
-      if (videosData.length < 1) {
-        return res.status(400).json({ 
-          message: "Veuillez ajouter au moins 1 lien vidéo (Vimeo, YouTube, etc.)" 
-        });
+    if (videos !== undefined) {
+      // Si c'est une chaîne JSON
+      if (typeof videos === "string") {
+        try {
+          const parsed = JSON.parse(videos);
+          videosData = Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+          // Si le parsing échoue, traiter comme tableau ou valeur unique
+          videosData = Array.isArray(videos) ? videos : [videos];
+        }
+      } else if (Array.isArray(videos)) {
+        videosData = videos;
+      } else {
+        videosData = [videos];
       }
-    } else {
-      return res.status(400).json({ 
-        message: "Veuillez ajouter au moins 1 lien vidéo (Vimeo, YouTube, etc.)" 
-      });
+      videosData = videosData.filter(v => v && v.trim && v.trim() !== "");
     }
 
     // Parser localisation si c'est une chaîne JSON
@@ -68,8 +73,38 @@ exports.createBien = async (req, res) => {
       }
     }
 
-    // Parser caracteristiques si c'est une chaîne JSON
-    let caracteristiquesData = caracteristiques;
+    // Convertir les coordonnées en nombres ou null
+    if (localisationData) {
+      // Latitude
+      if (localisationData.latitude !== null && localisationData.latitude !== undefined && localisationData.latitude !== "") {
+        const latNum = parseFloat(localisationData.latitude);
+        localisationData.latitude = isNaN(latNum) ? null : latNum;
+        console.log(`✅ [CREATE_BIEN] Latitude convertie: ${localisationData.latitude}`);
+      } else {
+        localisationData.latitude = null;
+        console.log("⚠️ [CREATE_BIEN] Latitude vide ou null");
+      }
+
+      // Longitude
+      if (localisationData.longitude !== null && localisationData.longitude !== undefined && localisationData.longitude !== "") {
+        const lngNum = parseFloat(localisationData.longitude);
+        localisationData.longitude = isNaN(lngNum) ? null : lngNum;
+        console.log(`✅ [CREATE_BIEN] Longitude convertie: ${localisationData.longitude}`);
+      } else {
+        localisationData.longitude = null;
+        console.log("⚠️ [CREATE_BIEN] Longitude vide ou null");
+      }
+      
+      console.log("📍 [CREATE_BIEN] Localisation finale:", {
+        ville: localisationData.ville,
+        quartier: localisationData.quartier,
+        latitude: localisationData.latitude,
+        longitude: localisationData.longitude
+      });
+    }
+
+    // Parser caracteristiques si c'est une chaîne JSON - Optionnel
+    let caracteristiquesData = caracteristiques || {};
     if (typeof caracteristiques === "string") {
       try {
         caracteristiquesData = JSON.parse(caracteristiques);
@@ -77,20 +112,67 @@ exports.createBien = async (req, res) => {
         caracteristiquesData = {};
       }
     }
+    
+    // Vérifier si caracteristiquesData contient des valeurs valides (non vides)
+    const hasValidCaracteristiques = caracteristiquesData && Object.keys(caracteristiquesData).length > 0 && 
+      Object.values(caracteristiquesData).some(v => {
+        if (v === null || v === undefined || v === "") return false;
+        if (v === false) return false; // Les booléens false sont considérés comme valides
+        if (Array.isArray(v)) return v.length > 0;
+        return true;
+      });
+
+    // Parser atoutsMajeurs si c'est un tableau ou une chaîne
+    let atoutsMajeursData = [];
+    if (atoutsMajeurs) {
+      if (Array.isArray(atoutsMajeurs)) {
+        atoutsMajeursData = atoutsMajeurs.filter(a => a && a.trim() !== "");
+      } else if (typeof atoutsMajeurs === "string") {
+        try {
+          const parsed = JSON.parse(atoutsMajeurs);
+          atoutsMajeursData = Array.isArray(parsed) ? parsed.filter(a => a && a.trim() !== "") : [];
+        } catch (e) {
+          // Si ce n'est pas du JSON, traiter comme un seul élément
+          if (atoutsMajeurs.trim() !== "") {
+            atoutsMajeursData = [atoutsMajeurs.trim()];
+          }
+        }
+      }
+    }
+
+    // Traiter situationGeographique et descriptionPhysique (peuvent être des tableaux si envoyés plusieurs fois via FormData)
+    let situationGeographiqueFinal = situationGeographique;
+    if (Array.isArray(situationGeographique)) {
+      // Prendre la première valeur non vide
+      situationGeographiqueFinal = situationGeographique.find(s => s && s.trim() !== "") || undefined;
+    } else if (typeof situationGeographique === "string" && situationGeographique.trim() === "") {
+      situationGeographiqueFinal = undefined;
+    }
+
+    let descriptionPhysiqueFinal = descriptionPhysique;
+    if (Array.isArray(descriptionPhysique)) {
+      // Prendre la première valeur non vide
+      descriptionPhysiqueFinal = descriptionPhysique.find(d => d && d.trim() !== "") || undefined;
+    } else if (typeof descriptionPhysique === "string" && descriptionPhysique.trim() === "") {
+      descriptionPhysiqueFinal = undefined;
+    }
 
     const bien = await BienImmobilier.create({
       type,
       titre,
       description,
+      situationGeographique: situationGeographiqueFinal,
+      descriptionPhysique: descriptionPhysiqueFinal,
+      atoutsMajeurs: atoutsMajeursData.length > 0 ? atoutsMajeursData : undefined,
       prix: parseFloat(prix),
       superficie: superficie ? parseFloat(superficie) : undefined,
       statut: statut || "disponible",
       localisation: localisationData,
       images,
-      videos: videosData, // URLs vidéos (Vimeo, YouTube, etc.)
-      documents,
-      visite360,
-      caracteristiques: caracteristiquesData,
+      videos: videosData.length > 0 ? videosData : undefined, // URLs vidéos (Vimeo, YouTube, etc.) - Optionnel
+      documents: documents.length > 0 ? documents : undefined, // Documents - Optionnel
+      visite360: visite360 || undefined, // Visite 360 - Optionnel
+      caracteristiques: hasValidCaracteristiques ? caracteristiquesData : undefined, // Caractéristiques - Optionnel
       agenceId: agence._id,
       featured: featured === "true" || featured === true,
       urgent: urgent === "true" || urgent === true,
@@ -155,18 +237,47 @@ exports.getAllBiens = async (req, res) => {
  */
 exports.getBienById = async (req, res) => {
   try {
-    const bien = await BienImmobilier.findById(req.params.id)
+    const bienId = req.params.id;
+    console.log("🔵 [GET_BIEN_BY_ID] Récupération bien ID:", bienId);
+    
+    // Utiliser lean() pour obtenir un objet JavaScript pur
+    const bien = await BienImmobilier.findById(bienId)
       .populate("affecteeA", "fullName phone")
       .populate("vendueA", "fullName phone")
-      .populate("agenceId", "nom telephone");
+      .populate("agenceId", "nom telephone")
+      .lean();
 
     if (!bien) {
+      console.log("❌ [GET_BIEN_BY_ID] Bien non trouvé pour ID:", bienId);
       return res.status(404).json({ message: "Bien non trouvé" });
     }
 
-    return res.status(200).json(bien);
+    // Log des champs spécifiques
+    console.log("✅ [GET_BIEN_BY_ID] Bien trouvé:", bien.titre);
+    console.log("📍 [GET_BIEN_BY_ID] situationGeographique:", bien.situationGeographique, "Type:", typeof bien.situationGeographique, "Truthy:", !!bien.situationGeographique);
+    console.log("🏗️ [GET_BIEN_BY_ID] descriptionPhysique:", bien.descriptionPhysique, "Type:", typeof bien.descriptionPhysique, "Truthy:", !!bien.descriptionPhysique);
+    console.log("⭐ [GET_BIEN_BY_ID] atoutsMajeurs:", bien.atoutsMajeurs, "Type:", typeof bien.atoutsMajeurs, "IsArray:", Array.isArray(bien.atoutsMajeurs), "Length:", bien.atoutsMajeurs?.length);
+    
+    // S'assurer que tous les champs sont bien présents dans la réponse
+    const responseData = {
+      ...bien,
+      situationGeographique: bien.situationGeographique || null,
+      descriptionPhysique: bien.descriptionPhysique || null,
+      atoutsMajeurs: Array.isArray(bien.atoutsMajeurs) ? bien.atoutsMajeurs : (bien.atoutsMajeurs ? [bien.atoutsMajeurs] : []),
+    };
+    
+    console.log("📦 [GET_BIEN_BY_ID] Données finales envoyées:", {
+      situationGeographique: responseData.situationGeographique,
+      descriptionPhysique: responseData.descriptionPhysique,
+      atoutsMajeurs: responseData.atoutsMajeurs,
+      hasSituationGeo: !!responseData.situationGeographique,
+      hasDescPhysique: !!responseData.descriptionPhysique,
+      hasAtouts: responseData.atoutsMajeurs.length > 0
+    });
+
+    return res.status(200).json(responseData);
   } catch (error) {
-    console.error("❌ Erreur récupération bien:", error);
+    console.error("❌ [GET_BIEN_BY_ID] Erreur récupération bien:", error);
     return res.status(500).json({ message: error.message });
   }
 };
@@ -204,24 +315,74 @@ exports.updateBien = async (req, res) => {
       ];
     }
     
-    // Gérer les URLs vidéos si fournies
-    if (updateData.videos) {
-      const newVideos = Array.isArray(updateData.videos) 
-        ? updateData.videos 
-        : [updateData.videos];
-      const filteredVideos = newVideos.filter(v => v && v.trim() !== "");
-      if (filteredVideos.length > 0) {
-        updateData.videos = [...(currentBien.videos || []), ...filteredVideos];
+    // Gérer les URLs vidéos - Remplacer au lieu d'ajouter
+    if (updateData.videos !== undefined) {
+      let videosArray = [];
+      
+      // Si c'est une chaîne JSON (envoyé depuis le frontend)
+      if (typeof updateData.videos === "string") {
+        try {
+          const parsed = JSON.parse(updateData.videos);
+          videosArray = Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+          // Si le parsing échoue, essayer comme tableau direct ou valeur unique
+          videosArray = Array.isArray(updateData.videos) 
+            ? updateData.videos 
+            : [updateData.videos];
+        }
+      } else if (Array.isArray(updateData.videos)) {
+        // Si c'est déjà un tableau (multer peut créer un tableau)
+        videosArray = updateData.videos;
+      } else {
+        // Si c'est une valeur unique
+        videosArray = [updateData.videos];
       }
+      
+      // Filtrer les valeurs vides et mettre à jour
+      updateData.videos = videosArray.filter(v => v && v.trim && v.trim() !== "");
+      // Si le tableau est vide après filtrage, cela supprimera toutes les vidéos existantes
     }
 
     // Parser localisation et caracteristiques si nécessaire
-    if (updateData.localisation && typeof updateData.localisation === "string") {
+    let localisationData = updateData.localisation;
+    if (localisationData && typeof localisationData === "string") {
       try {
-        updateData.localisation = JSON.parse(updateData.localisation);
+        localisationData = JSON.parse(localisationData);
       } catch (e) {
-        // Ignore parsing errors
+        localisationData = {};
       }
+    }
+
+    // Convertir les coordonnées en nombres ou null (comme dans createBien)
+    if (localisationData) {
+      // Latitude
+      if (localisationData.latitude !== null && localisationData.latitude !== undefined && localisationData.latitude !== "") {
+        const latNum = parseFloat(localisationData.latitude);
+        localisationData.latitude = isNaN(latNum) ? null : latNum;
+        console.log(`✅ [UPDATE_BIEN] Latitude convertie: ${localisationData.latitude}`);
+      } else {
+        localisationData.latitude = null;
+        console.log("⚠️ [UPDATE_BIEN] Latitude vide ou null");
+      }
+
+      // Longitude
+      if (localisationData.longitude !== null && localisationData.longitude !== undefined && localisationData.longitude !== "") {
+        const lngNum = parseFloat(localisationData.longitude);
+        localisationData.longitude = isNaN(lngNum) ? null : lngNum;
+        console.log(`✅ [UPDATE_BIEN] Longitude convertie: ${localisationData.longitude}`);
+      } else {
+        localisationData.longitude = null;
+        console.log("⚠️ [UPDATE_BIEN] Longitude vide ou null");
+      }
+      
+      console.log("📍 [UPDATE_BIEN] Localisation finale:", {
+        ville: localisationData.ville,
+        quartier: localisationData.quartier,
+        latitude: localisationData.latitude,
+        longitude: localisationData.longitude
+      });
+      
+      updateData.localisation = localisationData;
     }
 
     if (
@@ -233,6 +394,51 @@ exports.updateBien = async (req, res) => {
       } catch (e) {
         // Ignore parsing errors
       }
+    }
+
+    // Traiter situationGeographique et descriptionPhysique (peuvent être des tableaux si envoyés plusieurs fois via FormData)
+    if (updateData.situationGeographique !== undefined) {
+      let situationGeographiqueFinal = updateData.situationGeographique;
+      if (Array.isArray(situationGeographiqueFinal)) {
+        // Prendre la première valeur non vide
+        situationGeographiqueFinal = situationGeographiqueFinal.find(s => s && typeof s === "string" && s.trim() !== "") || null;
+      } else if (typeof situationGeographiqueFinal === "string") {
+        situationGeographiqueFinal = situationGeographiqueFinal.trim() !== "" ? situationGeographiqueFinal.trim() : null;
+      }
+      // Utiliser null au lieu de undefined pour permettre la suppression explicite
+      updateData.situationGeographique = situationGeographiqueFinal || null;
+    }
+
+    if (updateData.descriptionPhysique !== undefined) {
+      let descriptionPhysiqueFinal = updateData.descriptionPhysique;
+      if (Array.isArray(descriptionPhysiqueFinal)) {
+        // Prendre la première valeur non vide
+        descriptionPhysiqueFinal = descriptionPhysiqueFinal.find(d => d && typeof d === "string" && d.trim() !== "") || null;
+      } else if (typeof descriptionPhysiqueFinal === "string") {
+        descriptionPhysiqueFinal = descriptionPhysiqueFinal.trim() !== "" ? descriptionPhysiqueFinal.trim() : null;
+      }
+      // Utiliser null au lieu de undefined pour permettre la suppression explicite
+      updateData.descriptionPhysique = descriptionPhysiqueFinal || null;
+    }
+
+    // Traiter atoutsMajeurs
+    if (updateData.atoutsMajeurs !== undefined) {
+      let atoutsMajeursData = [];
+      if (Array.isArray(updateData.atoutsMajeurs)) {
+        atoutsMajeursData = updateData.atoutsMajeurs.filter(a => a && a.trim && a.trim() !== "");
+      } else if (typeof updateData.atoutsMajeurs === "string") {
+        try {
+          const parsed = JSON.parse(updateData.atoutsMajeurs);
+          atoutsMajeursData = Array.isArray(parsed) ? parsed.filter(a => a && a.trim && a.trim() !== "") : [];
+        } catch (e) {
+          // Si ce n'est pas du JSON, traiter comme un seul élément
+          if (updateData.atoutsMajeurs.trim() !== "") {
+            atoutsMajeursData = [updateData.atoutsMajeurs.trim()];
+          }
+        }
+      }
+      // Si le tableau est vide, cela supprimera tous les atouts existants
+      updateData.atoutsMajeurs = atoutsMajeursData.length > 0 ? atoutsMajeursData : [];
     }
 
     const bien = await BienImmobilier.findByIdAndUpdate(

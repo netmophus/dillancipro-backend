@@ -563,13 +563,15 @@ exports.getPublicParcelles = async (req, res) => {
     })
     .populate("agenceId", "nom ville telephone")
     .sort({ createdAt: -1 })
-    .limit(20); // Limiter à 20 parcelles pour la homepage
+    .limit(20) // Limiter à 20 parcelles pour la homepage
+    .lean(); // Utiliser lean() pour obtenir des objets JavaScript simples
     
     // Ajouter les images et vidéos de l'îlot à chaque parcelle
     const parcellesWithIlotMedia = parcelles.map(parcelle => ({
-      ...parcelle.toObject(),
+      ...parcelle,
       images: parcelle.ilot?.images || [],
       videos: parcelle.ilot?.videos || [],
+      photos: parcelle.photos || [], // Inclure les photos de la parcelle si elles existent
     }));
     
     res.json({

@@ -64,7 +64,17 @@ exports.getPublicBiensSearch = async (req, res) => {
       .populate("agenceId", "nom telephone email adresse ville")
       .sort({ [sortBy]: sortOrder === "asc" ? 1 : -1 })
       .skip((page - 1) * limit)
-      .limit(limit);
+      .limit(limit)
+      .lean(); // Utiliser lean() pour obtenir des objets JavaScript purs
+
+    // Log pour vérifier les données
+    if (biens.length > 0) {
+      const firstBien = biens[0];
+      console.log("🔵 [PUBLIC_BIENS] Premier bien récupéré:", firstBien.titre);
+      console.log("📍 [PUBLIC_BIENS] situationGeographique:", firstBien.situationGeographique, "Type:", typeof firstBien.situationGeographique);
+      console.log("🏗️ [PUBLIC_BIENS] descriptionPhysique:", firstBien.descriptionPhysique, "Type:", typeof firstBien.descriptionPhysique);
+      console.log("⭐ [PUBLIC_BIENS] atoutsMajeurs:", firstBien.atoutsMajeurs, "Type:", typeof firstBien.atoutsMajeurs, "IsArray:", Array.isArray(firstBien.atoutsMajeurs));
+    }
 
     res.status(200).json({
       message: "Biens trouvés avec succès",

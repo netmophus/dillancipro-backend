@@ -54,8 +54,8 @@ const allowedOrigins = [
   "http://127.0.0.1:3000",
   "http://localhost:5173",
   "http://127.0.0.1:5173",
-  "http://192.168.80.198:3000",
-   "http://192.168.0.100:3000",
+  "http://192.168.80.168:3000",
+   "http://192.168.80.29:3000",
   "https://dillanciprofrontend-94260dd67ad1.herokuapp.com",
 ];
 
