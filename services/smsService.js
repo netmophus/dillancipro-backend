@@ -1,86 +1,78 @@
-const axios = require("axios");
-const dotenv = require("dotenv");
+const axios = require('axios');
+require('dotenv').config();
 
-dotenv.config();
+// URL correcte confirmée via l'implémentation Python opérationnelle
+const LAM_URL       = 'https://lamsms.lafricamobile.com/api';
+const LAM_ACCOUNT   = process.env.LAM_ACCOUNT_ID || 'SOFTLINK_TECHNOLOGIES_01';
+const LAM_PASSWORD  = process.env.LAM_PASSWORD   || 'N5WZqYLOuQdBiGF';
+const LAM_SENDER    = process.env.LAM_SENDER      || 'SOFTLINK';
 
-const SMS_API_URL = process.env.SMS_API_URL;
-const SMS_USERNAME = process.env.SMS_USERNAME;
-const SMS_PASSWORD = process.env.SMS_PASSWORD;
+/**
+ * Normalise un numéro de téléphone en format international Niger
+ * Ex: 90000000 → 22790000000
+ */
+const normalizePhone = (phone) => {
+  if (!phone) return null;
+  const cleaned = phone.replace(/[\s\-\.\(\)]/g, '');
+  // Déjà en format international
+  if (cleaned.startsWith('+')) return cleaned.replace('+', '');
+  if (cleaned.startsWith('00')) return cleaned.slice(2);
+  // Numéro local Niger (8 chiffres)
+  if (cleaned.length === 8) return `227${cleaned}`;
+  // Déjà avec indicatif 227
+  if (cleaned.startsWith('227')) return cleaned;
+  return cleaned;
+};
 
+/**
+ * Envoie un SMS via L'Africa Mobile
+ * @param {string} to      - Numéro destinataire
+ * @param {string} message - Contenu du SMS
+ * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
+ */
 const sendSMS = async (to, message) => {
+  const phone = normalizePhone(to);
+  if (!phone) {
+    console.error('❌ SMS — numéro invalide:', to);
+    return { success: false, error: 'Numéro invalide' };
+  }
+
+  // Champs exacts confirmés par l'API LAM (accountid / sender / text)
+  const payload = {
+    accountid: LAM_ACCOUNT,
+    password:  LAM_PASSWORD,
+    sender:    LAM_SENDER,
+    to:        phone,
+    text:      message,
+  };
+
   try {
-    // Vérifier que les variables d'environnement sont définies
-    if (!SMS_API_URL || !SMS_USERNAME || !SMS_PASSWORD) {
-      console.error("❌ [SMS] Variables d'environnement manquantes :", {
-        SMS_API_URL: SMS_API_URL ? "✅" : "❌",
-        SMS_USERNAME: SMS_USERNAME ? "✅" : "❌",
-        SMS_PASSWORD: SMS_PASSWORD ? "✅" : "❌",
-      });
-      return { 
-        success: false, 
-        error: "Configuration SMS manquante. Veuillez vérifier les variables d'environnement." 
-      };
-    }
-
-    // Vérifier que l'URL est valide
-    if (!SMS_API_URL.startsWith("http://") && !SMS_API_URL.startsWith("https://")) {
-      console.error("❌ [SMS] URL invalide :", SMS_API_URL);
-      return { 
-        success: false, 
-        error: "URL SMS invalide. L'URL doit commencer par http:// ou https://" 
-      };
-    }
-
-    const payload = {
-      to,
-      from: "Softlink",
-      content: message,
-      dlr: "yes",
-      "dlr-level": 3,
-      "dlr-method": "GET",
-      "dlr-url": "https://sms.ne/dlr",
-    };
-
-    console.log("📱 [SMS] Envoi SMS à:", to);
-    console.log("📱 [SMS] URL:", SMS_API_URL);
-
-    const response = await axios.post(SMS_API_URL, payload, {
-      auth: {
-        username: SMS_USERNAME,
-        password: SMS_PASSWORD,
-      },
+    const response = await axios.post(LAM_URL, payload, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
+        'Accept':       'text/plain',   // L'API LAM retourne un push_id en texte brut
       },
-      timeout: 10000, // 10 secondes de timeout
+      timeout: 60000,
     });
 
-    console.log("✅ [SMS] SMS envoyé avec succès :", response.data);
-    return response.status === 200
-      ? { success: true, data: response.data }
-      : { success: false, data: response.data };
-  } catch (error) {
-    if (error.response) {
-      console.error("❌ [SMS] Erreur de l'API SMS :", error.response.status, error.response.data);
-      return { 
-        success: false, 
-        error: error.response.data || "Erreur lors de l'envoi du SMS" 
-      };
-    } else if (error.request) {
-      console.error("❌ [SMS] Aucune réponse du serveur SMS :", error.message);
-      return { 
-        success: false, 
-        error: "Impossible de contacter le serveur SMS. Vérifiez votre connexion." 
-      };
-    } else {
-      console.error("❌ [SMS] Erreur de configuration :", error.message);
-      return { 
-        success: false, 
-        error: `Erreur de configuration : ${error.message}` 
-      };
+    // L'API répond 200 + corps = push_id (entier) en cas de succès
+    const body = typeof response.data === 'string'
+      ? response.data.trim()
+      : String(response.data ?? '').trim();
+
+    if (response.status === 200) {
+      const pushId = /^\d+$/.test(body) ? body : null;
+      console.log(`✅ SMS envoyé → ${phone} | push_id: ${pushId || body}`);
+      return { success: true, messageId: pushId || body };
     }
+
+    console.error('❌ SMS échec API:', body);
+    return { success: false, error: body };
+  } catch (err) {
+    const detail = err.response?.data || err.message;
+    console.error('❌ SMS erreur réseau:', detail);
+    return { success: false, error: JSON.stringify(detail) };
   }
 };
 
-module.exports = { sendSMS };
-
+module.exports = { sendSMS, normalizePhone };
