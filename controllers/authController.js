@@ -275,7 +275,7 @@ exports.registerClient = async (req, res) => {
     // Envoyer le code selon la méthode choisie
     if (phoneProvided) {
       // Envoyer par SMS
-      const message = `Votre code de vérification GeoFoncier est : ${verificationCode}. Ce code expire dans 15 minutes. Ne le partagez avec personne.`;
+      const message = `Votre code de vérification MIZNAS Patrimoine est : ${verificationCode}. Ce code expire dans 15 minutes. Ne le partagez avec personne.`;
       const smsResult = await sendSMS(phone.trim(), message);
 
       if (!smsResult.success) {
@@ -401,7 +401,7 @@ exports.register = async (req, res) => {
     // Envoyer le code selon la méthode choisie
     if (phoneProvided) {
       // Envoyer par SMS
-      const message = `Votre code de vérification GeoFoncier est : ${verificationCode}. Ce code expire dans 15 minutes. Ne le partagez avec personne.`;
+      const message = `Votre code de vérification MIZNAS Patrimoine est : ${verificationCode}. Ce code expire dans 15 minutes. Ne le partagez avec personne.`;
       const smsResult = await sendSMS(phone.trim(), message);
 
       if (!smsResult.success) {
@@ -983,7 +983,7 @@ exports.resendVerificationCode = async (req, res) => {
     // Envoyer le code selon la méthode choisie
     if (phoneProvided) {
       // Envoyer par SMS
-      const message = `Votre code de vérification GeoFoncier est : ${verificationCode}. Ce code expire dans 15 minutes. Ne le partagez avec personne.`;
+      const message = `Votre code de vérification MIZNAS Patrimoine est : ${verificationCode}. Ce code expire dans 15 minutes. Ne le partagez avec personne.`;
       const smsResult = await sendSMS(phone.trim(), message);
 
       if (!smsResult.success) {
