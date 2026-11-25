@@ -50,12 +50,13 @@ const app = express();
 
 // ✅ Origines autorisées
 const allowedOrigins = [
-  "http://localhost:3000",
   "http://127.0.0.1:3000",
   "http://localhost:5173",
-  "http://127.0.0.1:5173",
-  "http://192.168.80.168:3000",
-   "http://192.168.80.29:3000",
+  "http://127.0.0.1:5173", 
+    "http://192.168.80.23:3000",
+   "http://192.168.0.100:3000",  
+     "http://10.215.174.25:3000", 
+     "http://192.168.1.221:3000", 
   "https://dillanciprofrontend-94260dd67ad1.herokuapp.com",
 ];
 
@@ -76,11 +77,16 @@ const uniqueAllowedOrigins = [...new Set(allowedOrigins)];
 console.log("[CORS] Allowed origins:", uniqueAllowedOrigins);
 
 
+// ✅ Autorise localhost et les IP privées du réseau local (LAN), quel que soit le port
+//    Ex : http://192.168.80.23:3000, http://10.0.0.5:5173, http://localhost:3001 ...
+const lanOriginRegex =
+  /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$/;
+
 // ✅ Middleware CORS dynamique
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || uniqueAllowedOrigins.includes(origin)) {
+      if (!origin || uniqueAllowedOrigins.includes(origin) || lanOriginRegex.test(origin)) {
         callback(null, true);
       } else {
         console.warn("[CORS] Origin non autorisée:", origin);

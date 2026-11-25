@@ -29,6 +29,9 @@ const uploadAgenceDocs = require("../middlewares/uploadAgenceDocs");
 // Routes géographiques (villes, quartiers, zones)
 const geographicRoutes = require("./admin/geographicRoutes");
 
+// Statistiques du tableau de bord admin
+const { getAdminStats } = require("../controllers/admin/statsController");
+
 // Routes pour les banques
 const {
   getAllBanques,
@@ -77,6 +80,9 @@ router.patch("/users/:id/status", authMiddleware, authorizeRoles("Admin"), async
     res.status(500).json({ message: "Erreur lors de la mise à jour du statut" });
   }
 });
+
+// 📊 Statistiques du tableau de bord (Admin uniquement)
+router.get("/stats", authMiddleware, authorizeRoles("Admin"), getAdminStats);
 
 // 🏛️ Routes géographiques (villes, quartiers, zones)
 router.use("/geographic", geographicRoutes);

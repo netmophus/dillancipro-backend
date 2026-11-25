@@ -6,3 +6,8 @@ npm-debug.log
 .DS_Store
 uploads/
 *.md
+
+.env.*
+build/
+dist/
+backup/
