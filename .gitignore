@@ -11,3 +11,4 @@ uploads/
 build/
 dist/
 backup/
+scripts/create-superadmin.js

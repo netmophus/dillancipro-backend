@@ -3,6 +3,7 @@ const Ilot = require("../../models/agences/Ilot");
 const Zone = require("../../models/agences/Zone");
 const Quartier = require("../../models/agences/Quartier");
 const Parcelle = require("../../models/agences/Parcelle");
+const Lotissement = require("../../models/agences/Lotissement");
 const Agence = require("../../models/Agence");
 
 /**
@@ -40,9 +41,12 @@ exports.createIlot = async (req, res) => {
     console.log("📝 [CREATE_ILOT] Body:", req.body);
     console.log("📝 [CREATE_ILOT] User:", { id: req.user.id, role: req.user.role, agenceId: req.user.agenceId });
 
-    const { numeroIlot, zone, quartier, surfaceTotale } = req.body;
+    const { numeroIlot, zone, quartier, surfaceTotale, lotissement } = req.body;
     if (!zone || !quartier) {
       return res.status(400).json({ message: "zone et quartier sont requis." });
+    }
+    if (!numeroIlot || !String(numeroIlot).trim()) {
+      return res.status(400).json({ message: "Le numéro de l'îlot est requis." });
     }
 
     // Vérifier que l'utilisateur a une agence (sauf pour Admin)
@@ -68,6 +72,18 @@ exports.createIlot = async (req, res) => {
     
     if (!agenceId) {
       return res.status(400).json({ message: "Aucune agence associée à cet utilisateur." });
+    }
+
+    // Lotissement facultatif : doit exister, appartenir à l'agence et être dans la même zone
+    if (lotissement) {
+      const lot = await Lotissement.findById(lotissement).select("zone agenceId");
+      if (!lot) return res.status(404).json({ message: "Lotissement introuvable." });
+      if (String(lot.agenceId) !== String(agenceId)) {
+        return res.status(403).json({ message: "Ce lotissement n'appartient pas à votre agence." });
+      }
+      if (String(lot.zone) !== String(zone)) {
+        return res.status(400).json({ message: "Le lotissement ne correspond pas à la zone fournie." });
+      }
     }
 
     // Récupérer l'agence pour générer le préfixe
@@ -128,6 +144,7 @@ exports.createIlot = async (req, res) => {
       quartier,
       agenceId: agenceId, // 🔗 on rattache à l'agence de l'utilisateur
       surfaceTotale,
+      ...(lotissement ? { lotissement } : {}),
       images, // Photos partagées par toutes les parcelles de cet îlot
       videos, // Vidéos partagées par toutes les parcelles de cet îlot
     });
@@ -181,6 +198,22 @@ exports.updateIlot = async (req, res) => {
 
     // Gérer les images et vidéos si fournies
     const updateData = { ...req.body };
+
+    // Lotissement : vide = détacher ; sinon doit appartenir à l'agence et à la zone de l'îlot
+    if (req.body.lotissement !== undefined) {
+      if (!req.body.lotissement) {
+        updateData.lotissement = null;
+      } else {
+        const lot = await Lotissement.findById(req.body.lotissement).select("zone agenceId");
+        if (!lot) return res.status(404).json({ message: "Lotissement introuvable." });
+        if (String(lot.agenceId) !== String(ilotExistant.agenceId)) {
+          return res.status(403).json({ message: "Ce lotissement n'appartient pas à votre agence." });
+        }
+        if (String(lot.zone) !== String(req.body.zone || ilotExistant.zone)) {
+          return res.status(400).json({ message: "Le lotissement ne correspond pas à la zone de l'îlot." });
+        }
+      }
+    }
     
     if (req.cloudinary?.images || req.files?.images) {
       const images = Array.isArray(req.cloudinary?.images) && req.cloudinary.images.length
@@ -244,7 +277,8 @@ exports.getAllIlots = async (req, res) => {
 
     const ilots = await Ilot.find(filter)
       .populate("zone", "nom")
-      .populate("quartier", "nom");
+      .populate("quartier", "nom")
+      .populate("lotissement", "nom");
     
     console.log("✅ [GET_ILOTS] Îlots trouvés:", ilots.length);
 

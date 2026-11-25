@@ -22,6 +22,8 @@ const IlotSchema = new mongoose.Schema(
     numeroIlot: { type: String, required: true, trim: true },
     zone: { type: mongoose.Schema.Types.ObjectId, ref: "Zone", required: true, index: true },
     quartier: { type: mongoose.Schema.Types.ObjectId, ref: "Quartier", required: true, index: true },
+    // Facultatif : les îlots existants n'ont pas de lotissement
+    lotissement: { type: mongoose.Schema.Types.ObjectId, ref: "Lotissement", index: true },
     agenceId: { type: mongoose.Schema.Types.ObjectId, ref: "Agence", required: true, index: true },
     surfaceTotale: { type: Number, default: 0 },
     affecteA: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // 👈 commercial assigné
