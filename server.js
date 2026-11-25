@@ -74,7 +74,28 @@ if (process.env.ALLOWED_ORIGINS) {
 
 const uniqueAllowedOrigins = [...new Set(allowedOrigins)];
 
-console.log("[CORS] Allowed origins:", uniqueAllowedOrigins);
+// ✅ En production : liste blanche stricte lue depuis CORS_ORIGINS (URLs séparées par des virgules)
+//    Ex : CORS_ORIGINS=https://exemple.ne,https://www.exemple.ne
+const isProduction = process.env.NODE_ENV === "production";
+const productionOrigins = [
+  ...new Set(
+    (process.env.CORS_ORIGINS || "")
+      .split(",")
+      .map((url) => url.trim().replace(/\/+$/, ""))
+      .filter(Boolean)
+  ),
+];
+
+if (isProduction) {
+  if (productionOrigins.length === 0) {
+    console.warn(
+      "[CORS] ATTENTION : NODE_ENV=production mais CORS_ORIGINS est vide. Aucune origine cross-site ne sera autorisée."
+    );
+  }
+  console.log("[CORS] Production - origines autorisées:", productionOrigins);
+} else {
+  console.log("[CORS] Allowed origins:", uniqueAllowedOrigins);
+}
 
 
 // ✅ Autorise localhost et les IP privées du réseau local (LAN), quel que soit le port
@@ -86,7 +107,10 @@ const lanOriginRegex =
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || uniqueAllowedOrigins.includes(origin) || lanOriginRegex.test(origin)) {
+      const allowed = isProduction
+        ? productionOrigins.includes(origin)
+        : uniqueAllowedOrigins.includes(origin) || lanOriginRegex.test(origin);
+      if (!origin || allowed) {
         callback(null, true);
       } else {
         console.warn("[CORS] Origin non autorisée:", origin);
