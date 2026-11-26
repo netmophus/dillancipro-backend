@@ -185,19 +185,23 @@ exports.searchParcelles = async (req, res) => {
     const parcelles = await Parcelle.find(filter)
       .populate({
         path: "ilot",
-        select: "numeroIlot images videos zone quartier",
-        populate: {
-          path: "zone",
-          select: "nom",
-          populate: {
-            path: "quartier",
+        select: "numeroIlot images videos zone quartier lotissement",
+        populate: [
+          {
+            path: "zone",
             select: "nom",
             populate: {
-              path: "ville",
+              path: "quartier",
               select: "nom",
+              populate: {
+                path: "ville",
+                select: "nom",
+              },
             },
           },
-        },
+          // Facultatif : les anciens îlots n'ont pas de lotissement
+          { path: "lotissement", select: "nom" },
+        ],
       })
       .populate("agenceId", "nom telephone email ville adresse")
       .select("-affecteeA -vendueA -dateVente -verifiedBy -verifiedAt") // Exclure les données sensibles
