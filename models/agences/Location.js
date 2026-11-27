@@ -17,8 +17,11 @@ const locationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    required: [true, "Le type de logement est obligatoire"],
-    enum: ["Villa", "Appartement", "Studio", "Maison", "Duplex", "Chambre", "Autre"],
+    required: [true, "Le type de bien est obligatoire"],
+    enum: [
+      "Villa", "Appartement", "Studio", "Maison", "Duplex", "Chambre",
+      "Boutique", "Local commercial", "Magasin", "Entrepot", "Bureau", "Autre"
+    ],
     default: "Appartement"
   },
 

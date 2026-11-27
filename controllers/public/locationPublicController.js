@@ -174,6 +174,11 @@ exports.getFilterOptions = async (req, res) => {
       { id: "Maison", nom: "Maison" },
       { id: "Duplex", nom: "Duplex" },
       { id: "Chambre", nom: "Chambre" },
+      { id: "Boutique", nom: "Boutique" },
+      { id: "Local commercial", nom: "Local commercial" },
+      { id: "Magasin", nom: "Magasin" },
+      { id: "Entrepot", nom: "Entrepot" },
+      { id: "Bureau", nom: "Bureau" },
       { id: "Autre", nom: "Autre" },
     ];
 
